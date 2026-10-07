@@ -41,8 +41,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ inputs.tag || github.ref_name }}
+            # Keep the leading "v" so the tag matches the git tag and the README.
             type=raw,value=${{ inputs.tag || github.ref_name }}
+            type=semver,pattern={{version}},value=${{ inputs.tag || github.ref_name }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
