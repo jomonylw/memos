@@ -94,6 +94,9 @@ func (d *DB) UpdateWebhook(ctx context.Context, update *store.UpdateWebhook) (*s
 		set, args = append(set, "url = ?"), append(args, *update.URL)
 	}
 	args = append(args, update.ID)
+	if err := requireUpdateSet(set, "webhook"); err != nil {
+		return nil, err
+	}
 
 	stmt := "UPDATE `webhook` SET " + strings.Join(set, ", ") + " WHERE `id` = ? RETURNING `id`, `created_ts`, `updated_ts`, `row_status`, `creator_id`, `name`, `url`"
 	webhook := &storepb.Webhook{}

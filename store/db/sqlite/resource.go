@@ -121,6 +121,9 @@ func (d *DB) UpdateResource(ctx context.Context, update *store.UpdateResource) (
 	}
 
 	args = append(args, update.ID)
+	if err := requireUpdateSet(set, "resource"); err != nil {
+		return nil, err
+	}
 	fields := []string{"id", "filename", "external_link", "type", "size", "creator_id", "created_ts", "updated_ts", "internal_path"}
 	stmt := `
 		UPDATE resource

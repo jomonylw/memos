@@ -32,6 +32,9 @@ func (d *DB) UpdateUser(ctx context.Context, update *store.UpdateUser) (*store.U
 	if v := update.RowStatus; v != nil {
 		set, args = append(set, "row_status = "+placeholder(len(args)+1)), append(args, *v)
 	}
+	if v := update.Role; v != nil {
+		set, args = append(set, "role = "+placeholder(len(args)+1)), append(args, *v)
+	}
 	if v := update.Username; v != nil {
 		set, args = append(set, "username = "+placeholder(len(args)+1)), append(args, *v)
 	}
@@ -79,6 +82,9 @@ func (d *DB) ListUsers(ctx context.Context, find *store.FindUser) ([]*store.User
 
 	if v := find.ID; v != nil {
 		where, args = append(where, "id = "+placeholder(len(args)+1)), append(args, *v)
+	}
+	if v := find.RowStatus; v != nil {
+		where, args = append(where, "row_status = "+placeholder(len(args)+1)), append(args, *v)
 	}
 	if v := find.Username; v != nil {
 		where, args = append(where, "username = "+placeholder(len(args)+1)), append(args, *v)

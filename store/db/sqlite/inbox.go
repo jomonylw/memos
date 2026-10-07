@@ -93,6 +93,9 @@ func (d *DB) ListInboxes(ctx context.Context, find *store.FindInbox) ([]*store.I
 func (d *DB) UpdateInbox(ctx context.Context, update *store.UpdateInbox) (*store.Inbox, error) {
 	set, args := []string{"`status` = ?"}, []any{update.Status.String()}
 	args = append(args, update.ID)
+	if err := requireUpdateSet(set, "inbox"); err != nil {
+		return nil, err
+	}
 	query := "UPDATE `inbox` SET " + strings.Join(set, ", ") + " WHERE `id` = ? RETURNING `id`, `created_ts`, `sender_id`, `receiver_id`, `status`, `message`"
 	inbox := &store.Inbox{}
 	var messageBytes []byte

@@ -44,7 +44,7 @@ type Server struct {
 
 func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store) (*Server, error) {
 	e := echo.New()
-	e.Debug = true
+	e.Debug = profile.Mode != "prod"
 	e.HideBanner = true
 	e.HidePort = true
 
@@ -56,6 +56,23 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 		// Asynchronous runners.
 		telegramBot: telegram.NewBotWithHandler(integration.NewTelegramHandler(store)),
 	}
+
+	// Recover from a panic in any handler. echo.New() does not install a
+	// recovery middleware, so without this a single malformed request that
+	// triggers a panic tears down the whole process instead of failing one
+	// request. Log the stack so the cause is still diagnosable.
+	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{
+		LogErrorFunc: func(c echo.Context, err error, stack []byte) error {
+			log.Error("panic recovered in http handler",
+				zap.String("method", c.Request().Method),
+				zap.String("uri", c.Request().RequestURI),
+				zap.Error(err),
+				zap.String("stack", string(stack)))
+			// Return an error so the response is a 500. Returning nil here would
+			// make echo treat the panic as handled and answer 200 OK.
+			return echo.NewHTTPError(http.StatusInternalServerError, "internal server error").SetInternal(err)
+		},
+	}))
 
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: `{"time":"${time_rfc3339}","latency":"${latency_human}",` +

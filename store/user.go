@@ -119,13 +119,19 @@ func (s *Store) ListUsers(ctx context.Context, find *FindUser) ([]*User, error) 
 }
 
 func (s *Store) GetUser(ctx context.Context, find *FindUser) (*User, error) {
+	// The cache is keyed by user ID only, so it can only answer lookups that are
+	// made by ID alone. A query that also filters on username, role or row_status
+	// has to reach the database, otherwise a caller asking for "the active user
+	// named X" could be handed a cached user that was archived or renamed.
 	if find.ID != nil {
 		if *find.ID == SystemBotID {
 			return SystemBot, nil
 		}
 
-		if cache, ok := s.userCache.Load(*find.ID); ok {
-			return cache.(*User), nil
+		if find.Username == nil && find.Role == nil && find.Email == nil && find.Nickname == nil && find.RowStatus == nil {
+			if cache, ok := s.userCache.Load(*find.ID); ok {
+				return cache.(*User), nil
+			}
 		}
 	}
 

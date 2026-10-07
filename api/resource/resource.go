@@ -80,25 +80,35 @@ func (s *Service) streamResource(c echo.Context) error {
 		}
 	}
 
-	blob := resource.Blob
-	if resource.InternalPath != "" {
-		resourcePath := filepath.FromSlash(resource.InternalPath)
-		if !filepath.IsAbs(resourcePath) {
-			resourcePath = filepath.Join(s.Profile.Data, resourcePath)
-		}
+	// A resource stored on disk is streamed straight from the file. It used to be
+	// read into memory in full first, so opening a page with many attachments
+	// allocated the size of every image at once. The blob is only needed when
+	// there is no file, or when a thumbnail has to be generated (which decodes
+	// the image anyway).
+	thumbnail := isThumbnailRequest(c, resource)
 
-		src, err := os.Open(resourcePath)
+	if resource.InternalPath != "" && !thumbnail {
+		f, err := os.Open(s.resolveResourcePath(resource))
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to open the local resource: %s", resourcePath)).SetInternal(err)
+			return echo.NewHTTPError(http.StatusInternalServerError,
+				fmt.Sprintf("Failed to open the local resource: %s", resource.InternalPath)).SetInternal(err)
 		}
-		defer src.Close()
-		blob, err = io.ReadAll(src)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to read the local resource: %s", resourcePath)).SetInternal(err)
-		}
+		defer f.Close()
+
+		return s.writeResource(c, resource, f)
 	}
 
-	if c.QueryParam("thumbnail") == "1" && util.HasPrefixes(resource.Type, "image/png", "image/jpeg") {
+	blob := resource.Blob
+	if resource.InternalPath != "" {
+		data, err := os.ReadFile(s.resolveResourcePath(resource))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError,
+				fmt.Sprintf("Failed to read the local resource: %s", resource.InternalPath)).SetInternal(err)
+		}
+		blob = data
+	}
+
+	if thumbnail {
 		ext := filepath.Ext(resource.Filename)
 		thumbnailPath := filepath.Join(s.Profile.Data, thumbnailImagePath, fmt.Sprintf("%d%s", resource.ID, ext))
 		thumbnailBlob, err := getOrGenerateThumbnailImage(blob, thumbnailPath)
@@ -109,17 +119,37 @@ func (s *Service) streamResource(c echo.Context) error {
 		}
 	}
 
+	return s.writeResource(c, resource, bytes.NewReader(blob))
+}
+
+// writeResource sends the resource body. Audio and video go through
+// http.ServeContent so that range requests keep working.
+func (s *Service) writeResource(c echo.Context, resource *store.Resource, content io.ReadSeeker) error {
 	c.Response().Writer.Header().Set(echo.HeaderCacheControl, "max-age=3600")
 	c.Response().Writer.Header().Set(echo.HeaderContentSecurityPolicy, "default-src 'none'; script-src 'none'; img-src 'self'; media-src 'self'; sandbox;")
 	c.Response().Writer.Header().Set("Content-Disposition", fmt.Sprintf(`filename="%s"`, resource.Filename))
+
 	resourceType := strings.ToLower(resource.Type)
 	if strings.HasPrefix(resourceType, "text") {
 		resourceType = echo.MIMETextPlainCharsetUTF8
 	} else if strings.HasPrefix(resourceType, "video") || strings.HasPrefix(resourceType, "audio") {
-		http.ServeContent(c.Response(), c.Request(), resource.Filename, time.Unix(resource.UpdatedTs, 0), bytes.NewReader(blob))
+		http.ServeContent(c.Response(), c.Request(), resource.Filename, time.Unix(resource.UpdatedTs, 0), content)
 		return nil
 	}
-	return c.Stream(http.StatusOK, resourceType, bytes.NewReader(blob))
+	return c.Stream(http.StatusOK, resourceType, content)
+}
+
+// isThumbnailRequest reports whether the caller asked for a generated thumbnail.
+func isThumbnailRequest(c echo.Context, resource *store.Resource) bool {
+	return c.QueryParam("thumbnail") == "1" && util.HasPrefixes(resource.Type, "image/png", "image/jpeg")
+}
+
+func (s *Service) resolveResourcePath(resource *store.Resource) string {
+	resourcePath := filepath.FromSlash(resource.InternalPath)
+	if !filepath.IsAbs(resourcePath) {
+		resourcePath = filepath.Join(s.Profile.Data, resourcePath)
+	}
+	return resourcePath
 }
 
 var availableGeneratorAmount int32 = 32

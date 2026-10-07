@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime/debug"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
@@ -11,8 +12,10 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	"github.com/usememos/memos/internal/log"
 	apiv2pb "github.com/usememos/memos/proto/gen/api/v2"
@@ -45,6 +48,7 @@ func NewAPIV2Service(secret string, profile *profile.Profile, store *store.Store
 	authProvider := NewGRPCAuthInterceptor(store, secret)
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			grpcRecoveryInterceptor(),
 			authProvider.AuthenticationInterceptor,
 		),
 	)
@@ -69,6 +73,29 @@ func NewAPIV2Service(secret string, profile *profile.Profile, store *store.Store
 	reflection.Register(grpcServer)
 
 	return apiv2Service
+}
+
+// grpcRecoveryInterceptor converts a panic in a handler into an Internal error.
+//
+// grpc-go does not recover panics raised inside an interceptor or a handler, and
+// the v2 API is the path used by the current web UI, so an unexpected panic there
+// would abort the whole process. Report it as a failed request instead and keep
+// the stack in the log so the cause stays diagnosable.
+func grpcRecoveryInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("panic recovered in grpc handler",
+					zap.String("method", info.FullMethod),
+					zap.Any("panic", r),
+					zap.String("stack", string(debug.Stack())))
+				resp = nil
+				err = status.Errorf(codes.Internal, "internal server error")
+			}
+		}()
+
+		return handler(ctx, request)
+	}
 }
 
 func (s *APIV2Service) GetGRPCServer() *grpc.Server {

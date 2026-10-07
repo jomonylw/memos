@@ -90,7 +90,7 @@ func (s *Store) DeleteResource(ctx context.Context, delete *DeleteResource) erro
 		return errors.Wrap(err, "failed to get resource")
 	}
 	if resource == nil {
-		return errors.Wrap(nil, "resource not found")
+		return errors.New("resource not found")
 	}
 
 	// Delete the local file.

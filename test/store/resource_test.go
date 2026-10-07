@@ -55,9 +55,12 @@ func TestResourceStore(t *testing.T) {
 		ID: 1,
 	})
 	require.NoError(t, err)
+	// ID 2 never existed. DeleteResource must report that instead of returning
+	// nil, otherwise the API layer answers "deleted" for a resource it never
+	// touched.
 	err = ts.DeleteResource(ctx, &store.DeleteResource{
 		ID: 2,
 	})
-	require.NoError(t, err)
+	require.Error(t, err)
 	ts.Close()
 }

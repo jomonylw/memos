@@ -77,6 +77,9 @@ func (d *DB) UpdateStorage(ctx context.Context, update *store.UpdateStorage) (*s
 		args = append(args, *update.Config)
 	}
 	args = append(args, update.ID)
+	if err := requireUpdateSet(set, "storage"); err != nil {
+		return nil, err
+	}
 
 	stmt := `
 		UPDATE storage

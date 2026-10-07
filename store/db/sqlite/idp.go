@@ -115,6 +115,9 @@ func (d *DB) UpdateIdentityProvider(ctx context.Context, update *store.UpdateIde
 		set, args = append(set, "config = ?"), append(args, string(configBytes))
 	}
 	args = append(args, update.ID)
+	if err := requireUpdateSet(set, "idp"); err != nil {
+		return nil, err
+	}
 
 	stmt := `
 		UPDATE idp

@@ -159,6 +159,9 @@ func (d *DB) UpdateMemo(ctx context.Context, update *store.UpdateMemo) error {
 		set, args = append(set, "visibility = ?"), append(args, *v)
 	}
 	args = append(args, update.ID)
+	if err := requireUpdateSet(set, "memo"); err != nil {
+		return err
+	}
 
 	stmt := `UPDATE memo SET ` + strings.Join(set, ", ") + ` WHERE id = ?`
 	if _, err := d.db.ExecContext(ctx, stmt, args...); err != nil {

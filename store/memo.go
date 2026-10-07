@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+
+	"github.com/pkg/errors"
 )
 
 // Visibility is the type of a visibility.
@@ -109,5 +111,20 @@ func (s *Store) UpdateMemo(ctx context.Context, update *UpdateMemo) error {
 }
 
 func (s *Store) DeleteMemo(ctx context.Context, delete *DeleteMemo) error {
+	// The resource table has no foreign key on memo_id, so deleting a memo does
+	// not remove the attachments that were linked to it. Delete them through
+	// DeleteResource, which also cleans up the local file and the cached
+	// thumbnail. Without this, an attachment of a deleted memo stays reachable
+	// through the public /r/:resourceId route, and its bytes stay in the database.
+	resources, err := s.ListResources(ctx, &FindResource{MemoID: &delete.ID})
+	if err != nil {
+		return errors.Wrap(err, "failed to list resources of the memo")
+	}
+	for _, resource := range resources {
+		if err := s.DeleteResource(ctx, &DeleteResource{ID: resource.ID}); err != nil {
+			return errors.Wrapf(err, "failed to delete resource %d of the memo", resource.ID)
+		}
+	}
+
 	return s.driver.DeleteMemo(ctx, delete)
 }

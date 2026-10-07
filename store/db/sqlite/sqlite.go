@@ -19,6 +19,18 @@ import (
 	"github.com/usememos/memos/store"
 )
 
+// Update-set builders below are fed exclusively from the optional pointer fields
+// of a *UpdateX struct. When a caller supplies no field at all, joining an empty
+// set produces "UPDATE t SET  WHERE id = ?", which SQLite rejects with a syntax
+// error. That surfaced as an opaque "SQL logic error" to the client, so reject the
+// no-op up front with a message that names the problem.
+func requireUpdateSet(set []string, table string) error {
+	if len(set) == 0 {
+		return errors.Errorf("no fields to update in %s", table)
+	}
+	return nil
+}
+
 // maxOpenConns caps the connection pool. Without this, SetMaxOpenConns(0) means
 // unlimited concurrent connections; each streaming resource request holds one for
 // the duration of the blob read, which lets a burst of image requests occupy every
