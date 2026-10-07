@@ -1,0 +1,5 @@
+web/node_modules
+
+# macOS: exFAT metadata files pollute the build context
+.DS_Store
+._*
