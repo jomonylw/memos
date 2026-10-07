@@ -363,4 +363,3 @@ func TestStreamResourceThumbnailCacheAndETag(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec3.Code)
 	require.Greater(t, len(rec3.Body.Bytes()), 0)
 }
-
