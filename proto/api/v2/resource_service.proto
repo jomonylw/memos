@@ -18,7 +18,7 @@ service ResourceService {
   }
   rpc UpdateResource(UpdateResourceRequest) returns (UpdateResourceResponse) {
     option (google.api.http) = {
-      patch: "/api/v2/resources/{resource.id}",
+      patch: "/api/v2/resources/{resource.id}"
       body: "resource"
     };
     option (google.api.method_signature) = "resource,update_mask";

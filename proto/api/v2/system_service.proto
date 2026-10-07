@@ -14,7 +14,7 @@ service SystemService {
   }
   rpc UpdateSystemInfo(UpdateSystemInfoRequest) returns (UpdateSystemInfoResponse) {
     option (google.api.http) = {
-      patch: "/api/v2/system/info",
+      patch: "/api/v2/system/info"
       body: "system_info"
     };
     option (google.api.method_signature) = "system_info,update_mask";

@@ -124,7 +124,7 @@ func (s *Service) streamResource(c echo.Context) error {
 
 // writeResource sends the resource body. Audio and video go through
 // http.ServeContent so that range requests keep working.
-func (s *Service) writeResource(c echo.Context, resource *store.Resource, content io.ReadSeeker) error {
+func (*Service) writeResource(c echo.Context, resource *store.Resource, content io.ReadSeeker) error {
 	c.Response().Writer.Header().Set(echo.HeaderCacheControl, "max-age=3600")
 	c.Response().Writer.Header().Set(echo.HeaderContentSecurityPolicy, "default-src 'none'; script-src 'none'; img-src 'self'; media-src 'self'; sandbox;")
 	c.Response().Writer.Header().Set("Content-Disposition", fmt.Sprintf(`filename="%s"`, resource.Filename))

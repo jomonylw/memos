@@ -6,6 +6,7 @@ on:
 
 jobs:
   build-and-push-test-image:
+    if: github.repository == 'usememos/memos'
     runs-on: ubuntu-latest
     permissions:
       contents: read

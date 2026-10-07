@@ -30,11 +30,18 @@ func NewVersionChecker(store *store.Store, profile *profile.Profile) *VersionChe
 }
 
 func (*VersionChecker) GetLatestVersion() (string, error) {
-	response, err := http.Get("https://www.usememos.com/api/version")
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+	response, err := client.Get("https://www.usememos.com/api/version")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to make http request")
 	}
 	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", errors.Errorf("failed to get version: status code %d", response.StatusCode)
+	}
 
 	buf := &bytes.Buffer{}
 	_, err = buf.ReadFrom(response.Body)

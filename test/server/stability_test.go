@@ -3,7 +3,6 @@ package testserver
 import (
 	"bytes"
 	"context"
-	"google.golang.org/protobuf/encoding/protojson"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	apiv1 "github.com/usememos/memos/api/v1"
 	apiv2pb "github.com/usememos/memos/proto/gen/api/v2"
