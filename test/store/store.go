@@ -15,6 +15,15 @@ import (
 )
 
 func NewTestingStore(ctx context.Context, t *testing.T) *store.Store {
+	ts, _ := NewTestingStoreWithDriver(ctx, t)
+	return ts
+}
+
+// NewTestingStoreWithDriver is NewTestingStore but also returns the underlying
+// driver. Use it when a test needs to inspect or repair rows directly, for
+// example to reproduce state that an older version left behind. The driver is
+// registered for cleanup with the returned store.
+func NewTestingStoreWithDriver(ctx context.Context, t *testing.T) (*store.Store, store.Driver) {
 	profile := test.GetTestingProfile(t)
 	dbDriver, err := db.NewDBDriver(profile)
 	if err != nil {
@@ -26,7 +35,7 @@ func NewTestingStore(ctx context.Context, t *testing.T) *store.Store {
 	}
 
 	store := store.New(dbDriver, profile)
-	return store
+	return store, dbDriver
 }
 
 func resetTestingDB(ctx context.Context, profile *profile.Profile, dbDriver store.Driver) {

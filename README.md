@@ -145,10 +145,49 @@ docker start memos
 > ⚠️ `VACUUM` 需要约等于数据库大小的**额外临时磁盘空间**，请先确认可用空间充足。
 > ⚠️ 执行前**务必先备份数据目录**。
 
+### 回收残留附件
+
+`patch.4` 之前的版本在删除 memo 时**不会删除其附件**（`resource` 表在 `memo_id` 上没有外键）。这些附件成为孤儿：数据库记录仍在、本地文件仍在，且图片仍可通过公开路由 `/o/r/:resourceId` 访问——即使所属 memo 早已删除。
+
+升级到 `patch.4` 后，新删除的 memo 会正确清理附件，但**历史残留不会自动清除**。可以这样回收：
+
+```bash
+docker stop memos
+```
+
+**第 1 步：找出真正的孤儿**（`memo_id` 有值，但指向的 memo 已不存在）：
+
+```bash
+docker run --rm -v <你的volume>:/data keinos/sqlite3 /data/memos_prod.db \
+  "SELECT r.id, r.filename, r.memo_id, r.size
+     FROM resource r
+    WHERE r.memo_id IS NOT NULL
+      AND r.memo_id NOT IN (SELECT id FROM memo)
+    ORDER BY r.size DESC;"
+```
+
+> 💡 **不要用 `memo_id IS NULL` 判定孤儿。** 上传流程是先建资源、再由 `UpdateResource` 绑定到 memo，
+> 所以 `memo_id IS NULL` 同时包含：用户头像、已上传但没用到、以及粘贴后未保存的临时资源。
+> 用它筛选会连同所有用户的头像一起删掉。**只清理上一步查出来的这批记录。**
+
+**第 2 步：确认无误后删除这批孤儿**（把 `WHERE` 换成第 1 步的条件即可）：
+
+```bash
+docker run --rm -v <你的volume>:/data keinos/sqlite3 /data/memos_prod.db \
+  "DELETE FROM resource
+    WHERE memo_id IS NOT NULL
+      AND memo_id NOT IN (SELECT id FROM memo);
+   VACUUM;"
+```
+
+数据库记录删除后，对应的本地文件（`<volume>/assets/`）与缩略图仍会留在磁盘上。确认数据库中已无这些记录后，再手动删除 `<volume>/assets/` 下不再被引用的文件。
+
+> ⚠️ 执行前**务必先备份数据目录**。
+
 ### 已知限制
 
 - 上游 issue #3922 / #4317 至今未被官方修复，**升级官方镜像不能替代本补丁**。
-- 附件存于 Database 时，每次读取仍会全量载入内存。极大并发下可能触及内存上限，若后续出现 OOM，可考虑改用 Local Storage。
+- 附件存于 Database 时，每次读取仍会全量载入内存（`GetBlob: true` 会取回 blob 列）。`patch.4` 已让**文件型附件**（Local Storage）改为直接从磁盘流式返回，但纯 Database 存储的附件仍受此限制。极大并发下可能触及内存上限，若后续出现 OOM，可考虑改用 Local Storage。
 
 ## Deploy with Docker in seconds
 
@@ -180,12 +219,12 @@ services:
     restart: unless-stopped
 ```
 
-每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.3`（与 git tag 一致）以及 `:0.18.2-patch.3`（semver 形式）。
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.4`（与 git tag 一致）以及 `:0.18.2-patch.4`（semver 形式）。
 
 镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
 
 ```bash
-git tag v0.18.2-patch.3 && git push origin v0.18.2-patch.3
+git tag v0.18.2-patch.4 && git push origin v0.18.2-patch.4
 ```
 
 ### 版本说明
@@ -195,9 +234,14 @@ git tag v0.18.2-patch.3 && git push origin v0.18.2-patch.3
 | `v0.18.2-patch.1` | 初版：移除运行时全库 `VACUUM`、限制连接池 |
 | `v0.18.2-patch.2` | 增加诊断日志 |
 | `v0.18.2-patch.3` | **修复空白页**（缺失资源返回 404 + 缓存头）、**修复 `auto_vacuum` 被静默忽略**、**修复全新部署迁移失败** |
+| `v0.18.2-patch.4` | **修复删除 memo 后附件残留**（数据与隐私泄露）、**修复删除不存在资源时谎报成功**、**修复成员角色/归档状态更改不生效**（三个数据库驱动）、**修复空更新生成非法 SQL**、**增加 HTTP / gRPC panic 恢复**（此前 panic 会杀死进程）、**修复文件型资源全量读入内存** |
 
 > ⚠️ `patch.1` 的 `auto_vacuum` 实际未生效（运行时 PRAGMA 在 WAL 切换后是空操作），
-> 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.3` 或更新版本**。
+> 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.4` 或更新版本**。
+
+> 🔒 **`patch.4` 建议尽快升级**：该版本修复了附件残留问题。在 `patch.3` 及更早版本中，删除 memo 不会删除其附件，
+> 图片仍可通过公开路由 `/o/r/:resourceId` 访问，且文件与数据库记录会一直占用磁盘。
+> 若你此前删过含附件的 memo，可按[下文「回收残留附件」](#回收残留附件)清理历史残留。
 
 > 💡 **Unraid 用户**：使用 `:latest` 时，更新后请务必勾选 **Force Download New Image**，否则 Unraid 会因本地已存在 `latest` 缓存而不会真正拉取新镜像。这是使用固定 tag 时最容易踩的坑。
 >
