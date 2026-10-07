@@ -129,6 +129,9 @@ export const parseTweetBlockquote = (htmlStr: string): TweetEmbedInfo | null => 
 
 export const extractTweetFromChildren = (children: Node[]): TweetEmbedInfo | null => {
   const nonWhitespaceChildren = children.filter((child) => {
+    if (child.type === NodeType.LINE_BREAK) {
+      return false;
+    }
     if (child.type === NodeType.TEXT) {
       return (child.textNode?.content || "").trim().length > 0;
     }
@@ -181,6 +184,11 @@ export const extractTweetFromChildren = (children: Node[]): TweetEmbedInfo | nul
 
     if (combined.toLowerCase().includes("<blockquote") && combined.toLowerCase().includes("twitter-tweet")) {
       return parseTweetBlockquote(combined);
+    }
+
+    const tweetUrlInfo = parseTweetUrl(combined);
+    if (tweetUrlInfo) {
+      return tweetUrlInfo;
     }
   }
 
@@ -252,7 +260,7 @@ export const normalizeMemoNodes = (nodes: Node[]): Node[] => {
             j++;
             continue;
           }
-          if (peekText.includes("<script") && peekText.includes("twitter.com")) {
+          if (peekText.includes("<script") && (peekText.includes("twitter.com") || peekText.includes("x.com"))) {
             combined += "\n" + getNodeContent(peekNode);
             j++;
           }
@@ -331,7 +339,7 @@ export const loadTwitterWidgets = (timeoutMs = 6000): Promise<TwitterWidgetsApi>
 
     if (checkReady()) return;
 
-    const existingScript = document.querySelector('script[src*="platform.twitter.com/widgets.js"]');
+    const existingScript = document.querySelector('script[src*="platform.twitter.com/widgets.js"], script[src*="platform.x.com/widgets.js"]');
     if (!existingScript) {
       const script = document.createElement("script");
       script.src = "https://platform.twitter.com/widgets.js";

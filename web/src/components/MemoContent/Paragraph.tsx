@@ -17,6 +17,9 @@ const Paragraph: React.FC<Props> = ({ children }: Props) => {
   }
 
   const nonWhitespaceChildren = children.filter((child) => {
+    if (child.type === NodeType.LINE_BREAK) {
+      return false;
+    }
     if (child.type === NodeType.TEXT) {
       return (child.textNode?.content || "").trim().length > 0;
     }
