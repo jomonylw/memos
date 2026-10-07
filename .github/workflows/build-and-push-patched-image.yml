@@ -41,7 +41,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Keep the leading "v" so the tag matches the git tag and the README.
+            # Always publish "latest" so Unraid can pull a fixed image name and
+            # pick up new builds via Force Download New Image, without editing
+            # the template every time.
+            type=raw,value=latest
+            # Keep the leading "v" so the version tag matches the git tag.
             type=raw,value=${{ inputs.tag || github.ref_name }}
             type=semver,pattern={{version}},value=${{ inputs.tag || github.ref_name }}
 

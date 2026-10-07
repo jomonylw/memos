@@ -141,7 +141,9 @@ Learn more about [other installation methods](https://www.usememos.com/docs/inst
 ```yaml
 services:
   memos:
-    image: ghcr.io/<你的用户名>/<仓库名>:v0.18.2-patch.1
+    # Use :latest to always receive new builds without editing this template.
+    # Pin a version tag (e.g. :v0.18.2-patch.1) if you prefer a fixed image.
+    image: ghcr.io/jomonylw/memos:latest
     container_name: memos
     ports:
       - "5230:5230"
@@ -152,13 +154,15 @@ services:
     restart: unless-stopped
 ```
 
-镜像 tag 可在仓库的 **Actions → build-and-push-patched-image** 中手动触发构建，或推送 `v*` 标签自动触发：
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.1`（与 git tag 一致）以及 `:0.18.2-patch.1`（semver 形式）。
+
+镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
 
 ```bash
-git tag v0.18.2-patch.1 && git push origin v0.18.2-patch.1
+git tag v0.18.2-patch.2 && git push origin v0.18.2-patch.2
 ```
 
-> 💡 **Unraid 用户**：更新镜像后请务必勾选 **Force Download New Image**，否则会继续使用本地缓存的旧镜像。
+> 💡 **Unraid 用户**：使用 `:latest` 时，更新后请务必勾选 **Force Download New Image**，否则 Unraid 会因本地已存在 `latest` 缓存而不会真正拉取新镜像。这是使用固定 tag 时最容易踩的坑。
 >
 > 💾 **磁盘提醒**：数据卷需保留足够空间。离线 `VACUUM` 会额外占用约等于数据库大小的临时空间（见[上文「部署后建议：离线回收数据库空间」](#部署后建议离线回收数据库空间)）。
 
