@@ -180,13 +180,24 @@ services:
     restart: unless-stopped
 ```
 
-每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.1`（与 git tag 一致）以及 `:0.18.2-patch.1`（semver 形式）。
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.3`（与 git tag 一致）以及 `:0.18.2-patch.3`（semver 形式）。
 
 镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
 
 ```bash
-git tag v0.18.2-patch.2 && git push origin v0.18.2-patch.2
+git tag v0.18.2-patch.3 && git push origin v0.18.2-patch.3
 ```
+
+### 版本说明
+
+| Tag | 内容 |
+|---|---|
+| `v0.18.2-patch.1` | 初版：移除运行时全库 `VACUUM`、限制连接池 |
+| `v0.18.2-patch.2` | 增加诊断日志 |
+| `v0.18.2-patch.3` | **修复空白页**（缺失资源返回 404 + 缓存头）、**修复 `auto_vacuum` 被静默忽略**、**修复全新部署迁移失败** |
+
+> ⚠️ `patch.1` 的 `auto_vacuum` 实际未生效（运行时 PRAGMA 在 WAL 切换后是空操作），
+> 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.3` 或更新版本**。
 
 > 💡 **Unraid 用户**：使用 `:latest` 时，更新后请务必勾选 **Force Download New Image**，否则 Unraid 会因本地已存在 `latest` 缓存而不会真正拉取新镜像。这是使用固定 tag 时最容易踩的坑。
 >
