@@ -219,12 +219,12 @@ services:
     restart: unless-stopped
 ```
 
-每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.4`（与 git tag 一致）以及 `:0.18.2-patch.4`（semver 形式）。
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.5`（与 git tag 一致）以及 `:0.18.2-patch.5`（semver 形式）。
 
 镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
 
 ```bash
-git tag v0.18.2-patch.4 && git push origin v0.18.2-patch.4
+git tag v0.18.2-patch.5 && git push origin v0.18.2-patch.5
 ```
 
 ### 版本说明
@@ -235,6 +235,7 @@ git tag v0.18.2-patch.4 && git push origin v0.18.2-patch.4
 | `v0.18.2-patch.2` | 增加诊断日志 |
 | `v0.18.2-patch.3` | **修复空白页**（缺失资源返回 404 + 缓存头）、**修复 `auto_vacuum` 被静默忽略**、**修复全新部署迁移失败** |
 | `v0.18.2-patch.4` | **修复删除 memo 后附件残留**（数据与隐私泄露）、**修复删除不存在资源时谎报成功**、**修复成员角色/归档状态更改不生效**（三个数据库驱动）、**修复空更新生成非法 SQL**、**增加 HTTP / gRPC panic 恢复**（此前 panic 会杀死进程）、**修复文件型资源全量读入内存** |
+| `v0.18.2-patch.5` | **消除 `ListMemos` (API v2) N+1 查询性能开销**（批量拉取 resources 与 relations、系统设置解析复用及 creator 缓存）、**修复全新安装空指针 Panic**（`CreateMemo` 系统设置未配置时的空安全保护）、**修复 macOS 环境下 gRPC Gateway 连接异常与测试端口冲突**、**补充 gRPC 服务优雅关闭及连接释放** |
 
 > ⚠️ `patch.1` 的 `auto_vacuum` 实际未生效（运行时 PRAGMA 在 WAL 切换后是空操作），
 > 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.4` 或更新版本**。

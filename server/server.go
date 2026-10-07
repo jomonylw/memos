@@ -38,6 +38,8 @@ type Server struct {
 	Profile *profile.Profile
 	Store   *store.Store
 
+	apiV2Service *apiv2.APIV2Service
+
 	// Asynchronous runners.
 	telegramBot *telegram.Bot
 }
@@ -128,6 +130,7 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 	apiV1Service.Register(rootGroup)
 
 	apiV2Service := apiv2.NewAPIV2Service(s.Secret, profile, store, s.Profile.Port+1)
+	s.apiV2Service = apiV2Service
 	// Register gRPC gateway as api v2.
 	if err := apiV2Service.RegisterGateway(ctx, e); err != nil {
 		return nil, errors.Wrap(err, "failed to register gRPC gateway")
@@ -151,6 +154,11 @@ func (s *Server) Shutdown(ctx context.Context) {
 	// Shutdown echo server
 	if err := s.e.Shutdown(ctx); err != nil {
 		fmt.Printf("failed to shutdown server, error: %v\n", err)
+	}
+
+	// Stop gRPC service
+	if s.apiV2Service != nil {
+		s.apiV2Service.Close()
 	}
 
 	// Close database connection

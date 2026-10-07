@@ -51,7 +51,7 @@ func (s *APIV2Service) CreateMemo(ctx context.Context, request *apiv2pb.CreateMe
 	create := &store.Memo{
 		CreatorID:  user.ID,
 		Content:    request.Content,
-		Visibility: store.Visibility(request.Visibility.String()),
+		Visibility: convertVisibilityToStore(request.Visibility),
 	}
 	// Find disable public memos system setting.
 	disablePublicMemosSystem, err := s.getDisablePublicMemosSystemSettingValue(ctx)
@@ -186,13 +186,99 @@ func (s *APIV2Service) ListMemos(ctx context.Context, request *apiv2pb.ListMemos
 		return nil, err
 	}
 
+	memoIDs := make([]int32, len(memos))
+	for i, memo := range memos {
+		memoIDs[i] = memo.ID
+	}
+
+	resourceMap := make(map[int32][]*apiv2pb.Resource)
+	if len(memoIDs) > 0 {
+		resources, err := s.Store.ListResources(ctx, &store.FindResource{
+			MemoIDList: memoIDs,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list memo resources")
+		}
+		for _, resource := range resources {
+			if resource.MemoID != nil {
+				resourceMap[*resource.MemoID] = append(resourceMap[*resource.MemoID], &apiv2pb.Resource{
+					Id:           resource.ID,
+					CreateTime:   timestamppb.New(time.Unix(resource.CreatedTs, 0)),
+					Filename:     resource.Filename,
+					ExternalLink: resource.ExternalLink,
+					Type:         resource.Type,
+					Size:         resource.Size,
+					MemoId:       resource.MemoID,
+				})
+			}
+		}
+	}
+
+	relationMap := make(map[int32][]*apiv2pb.MemoRelation)
+	if len(memoIDs) > 0 {
+		memoRelations, err := s.Store.ListMemoRelations(ctx, &store.FindMemoRelation{
+			MemoIDList: memoIDs,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list memo relations")
+		}
+		for _, relation := range memoRelations {
+			relationMap[relation.MemoID] = append(relationMap[relation.MemoID], convertMemoRelationFromStore(relation))
+		}
+
+		relatedMemoRelations, err := s.Store.ListMemoRelations(ctx, &store.FindMemoRelation{
+			RelatedMemoIDList: memoIDs,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list related memo relations")
+		}
+		for _, relation := range relatedMemoRelations {
+			relationMap[relation.RelatedMemoID] = append(relationMap[relation.RelatedMemoID], convertMemoRelationFromStore(relation))
+		}
+	}
+
+	userMap := make(map[int32]*store.User)
 	memoMessages := make([]*apiv2pb.Memo, len(memos))
 	for i, memo := range memos {
-		memoMessage, err := s.convertMemoFromStore(ctx, memo)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to convert memo")
+		creator, ok := userMap[memo.CreatorID]
+		if !ok {
+			creator, err = s.Store.GetUser(ctx, &store.FindUser{ID: &memo.CreatorID})
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get creator")
+			}
+			userMap[memo.CreatorID] = creator
 		}
-		memoMessages[i] = memoMessage
+		username := ""
+		if creator != nil {
+			username = creator.Username
+		}
+
+		displayTs := memo.CreatedTs
+		if displayWithUpdatedTs {
+			displayTs = memo.UpdatedTs
+		}
+
+		rawNodes, err := parser.Parse(tokenizer.Tokenize(memo.Content))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse memo content")
+		}
+
+		memoMessages[i] = &apiv2pb.Memo{
+			Id:          int32(memo.ID),
+			RowStatus:   convertRowStatusFromStore(memo.RowStatus),
+			Creator:     fmt.Sprintf("%s%s", UserNamePrefix, username),
+			CreatorId:   int32(memo.CreatorID),
+			CreateTime:  timestamppb.New(time.Unix(memo.CreatedTs, 0)),
+			UpdateTime:  timestamppb.New(time.Unix(memo.UpdatedTs, 0)),
+			DisplayTime: timestamppb.New(time.Unix(displayTs, 0)),
+			Content:     memo.Content,
+			Nodes:       convertFromASTNodes(rawNodes),
+			Visibility:  convertVisibilityFromStore(memo.Visibility),
+			Pinned:      memo.Pinned,
+			ParentId:    memo.ParentID,
+			Relations:   relationMap[memo.ID],
+			Resources:   resourceMap[memo.ID],
+		}
 	}
 
 	response := &apiv2pb.ListMemosResponse{
@@ -554,6 +640,10 @@ func (s *APIV2Service) convertMemoFromStore(ctx context.Context, memo *store.Mem
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get creator")
 	}
+	username := ""
+	if creator != nil {
+		username = creator.Username
+	}
 
 	listMemoRelationsResponse, err := s.ListMemoRelations(ctx, &apiv2pb.ListMemoRelationsRequest{Id: memo.ID})
 	if err != nil {
@@ -568,7 +658,7 @@ func (s *APIV2Service) convertMemoFromStore(ctx context.Context, memo *store.Mem
 	return &apiv2pb.Memo{
 		Id:          int32(memo.ID),
 		RowStatus:   convertRowStatusFromStore(memo.RowStatus),
-		Creator:     fmt.Sprintf("%s%s", UserNamePrefix, creator.Username),
+		Creator:     fmt.Sprintf("%s%s", UserNamePrefix, username),
 		CreatorId:   int32(memo.CreatorID),
 		CreateTime:  timestamppb.New(time.Unix(memo.CreatedTs, 0)),
 		UpdateTime:  timestamppb.New(time.Unix(memo.UpdatedTs, 0)),
@@ -608,9 +698,11 @@ func (s *APIV2Service) getDisablePublicMemosSystemSettingValue(ctx context.Conte
 		return false, errors.Wrap(err, "failed to find system setting")
 	}
 	disablePublicMemos := false
-	err = json.Unmarshal([]byte(disablePublicMemosSystemSetting.Value), &disablePublicMemos)
-	if err != nil {
-		return false, errors.Wrap(err, "failed to unmarshal system setting value")
+	if disablePublicMemosSystemSetting != nil {
+		err = json.Unmarshal([]byte(disablePublicMemosSystemSetting.Value), &disablePublicMemos)
+		if err != nil {
+			return false, errors.Wrap(err, "failed to unmarshal system setting value")
+		}
 	}
 	return disablePublicMemos, nil
 }

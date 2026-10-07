@@ -1,7 +1,9 @@
 package testserver
 
 import (
+	"bytes"
 	"context"
+	"google.golang.org/protobuf/encoding/protojson"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apiv1 "github.com/usememos/memos/api/v1"
+	apiv2pb "github.com/usememos/memos/proto/gen/api/v2"
 	"github.com/usememos/memos/store"
 )
 
@@ -142,4 +145,148 @@ func TestUpdateUserWithNoFieldsReturnsError(t *testing.T) {
 	_, err = s.server.Store.UpdateUser(ctx, &store.UpdateUser{ID: 1})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no fields to update")
+}
+
+// TestCreateMemoWithoutDisablePublicMemosSetting covers a nil dereference that
+// took down CreateMemo on every install where the "disable public memos" setting
+// had never been written.
+//
+// Store.GetSystemSetting returns (nil, nil) when the row does not exist, which
+// is the normal state of a fresh install. getDisablePublicMemosSystemSettingValue
+// passed that nil straight into disablePublicMemosSystemSetting.Value, so the
+// first memo created on a fresh instance panicked with "invalid memory address
+// or nil pointer dereference". The sibling helper
+// getMemoDisplayWithUpdatedTsSettingValue already guards for nil; this one did
+// not.
+func TestCreateMemoWithoutDisablePublicMemosSetting(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewTestingServer(ctx, t)
+	require.NoError(t, err)
+	defer s.Shutdown(ctx)
+
+	// The setting must genuinely be absent, otherwise this test proves nothing.
+	setting, err := s.server.Store.GetSystemSetting(ctx, &store.FindSystemSetting{
+		Name: apiv1.SystemSettingDisablePublicMemosName.String(),
+	})
+	require.NoError(t, err)
+	require.Nil(t, setting, "fresh install is expected to have no such setting")
+
+	_, err = s.postAuthSignUp(&apiv1.SignUp{
+		Username: "nopublicsetting",
+		Password: "nopublicpassword",
+	})
+	require.NoError(t, err)
+
+	// Go through the v2 gRPC gateway, which is the path that panicked. A panic
+	// there is swallowed by the recovery interceptor and reported as an internal
+	// error, so assert on the outcome rather than expecting the process to die.
+	body, err := s.post("/api/v2/memos", bytes.NewReader([]byte(
+		`{"content":"first memo on a fresh install","visibility":"PRIVATE"}`)), nil)
+	require.NoError(t, err)
+	defer body.Close()
+
+	raw, err := io.ReadAll(body)
+	require.NoError(t, err)
+
+	resp := &apiv2pb.CreateMemoResponse{}
+	require.NoError(t, protojson.Unmarshal(raw, resp),
+		"CreateMemo returned an error instead of a memo: %s", string(raw))
+	require.NotNil(t, resp.GetMemo())
+	require.Equal(t, "first memo on a fresh install", resp.GetMemo().GetContent())
+}
+
+func TestListMemosV2BatchRelationsAndResources(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewTestingServer(ctx, t)
+	require.NoError(t, err)
+	defer s.Shutdown(ctx)
+
+	user, err := s.postAuthSignUp(&apiv1.SignUp{
+		Username: "batchuser",
+		Password: "batchpassword",
+	})
+	require.NoError(t, err)
+
+	// Create memo 1
+	body1, err := s.post("/api/v2/memos", bytes.NewReader([]byte(
+		`{"content":"first batch memo","visibility":"PRIVATE"}`)), nil)
+	require.NoError(t, err)
+	defer body1.Close()
+	raw1, err := io.ReadAll(body1)
+	require.NoError(t, err)
+	resp1 := &apiv2pb.CreateMemoResponse{}
+	require.NoError(t, protojson.Unmarshal(raw1, resp1))
+	memo1 := resp1.GetMemo()
+	require.NotNil(t, memo1)
+
+	// Create memo 2
+	body2, err := s.post("/api/v2/memos", bytes.NewReader([]byte(
+		`{"content":"second batch memo","visibility":"PRIVATE"}`)), nil)
+	require.NoError(t, err)
+	defer body2.Close()
+	raw2, err := io.ReadAll(body2)
+	require.NoError(t, err)
+	resp2 := &apiv2pb.CreateMemoResponse{}
+	require.NoError(t, protojson.Unmarshal(raw2, resp2))
+	memo2 := resp2.GetMemo()
+	require.NotNil(t, memo2)
+
+	// Attach a resource to memo 1
+	memoID1 := memo1.Id
+	_, err = s.server.Store.CreateResource(ctx, &store.Resource{
+		CreatorID: user.ID,
+		Filename:  "attachment.png",
+		Type:      "image/png",
+		MemoID:    &memoID1,
+	})
+	require.NoError(t, err)
+
+	// Add a relation between memo 1 and memo 2
+	_, err = s.server.Store.UpsertMemoRelation(ctx, &store.MemoRelation{
+		MemoID:        memo1.Id,
+		RelatedMemoID: memo2.Id,
+		Type:          store.MemoRelationReference,
+	})
+	require.NoError(t, err)
+
+	// List memos via v2 API
+	listBody, err := s.get("/api/v2/memos", map[string]string{
+		"filter": `visibilities == ["PRIVATE"]`,
+	})
+	require.NoError(t, err)
+	defer listBody.Close()
+
+	listRaw, err := io.ReadAll(listBody)
+	require.NoError(t, err)
+
+	listResp := &apiv2pb.ListMemosResponse{}
+	require.NoError(t, protojson.Unmarshal(listRaw, listResp))
+	require.Len(t, listResp.GetMemos(), 2)
+
+	// Find memo 1 in response
+	var foundMemo1, foundMemo2 *apiv2pb.Memo
+	for _, m := range listResp.GetMemos() {
+		if m.Id == memo1.Id {
+			foundMemo1 = m
+		} else if m.Id == memo2.Id {
+			foundMemo2 = m
+		}
+	}
+	require.NotNil(t, foundMemo1)
+	require.NotNil(t, foundMemo2)
+
+	// Verify creator
+	require.Equal(t, fmt.Sprintf("users/%s", user.Username), foundMemo1.Creator)
+	require.Equal(t, fmt.Sprintf("users/%s", user.Username), foundMemo2.Creator)
+
+	// Verify resources on memo 1
+	require.Len(t, foundMemo1.Resources, 1)
+	require.Equal(t, "attachment.png", foundMemo1.Resources[0].Filename)
+	require.Len(t, foundMemo2.Resources, 0)
+
+	// Verify relations on memo 1 and memo 2
+	require.Len(t, foundMemo1.Relations, 1)
+	require.Equal(t, memo2.Id, foundMemo1.Relations[0].RelatedMemoId)
+	require.Len(t, foundMemo2.Relations, 1)
+	require.Equal(t, memo1.Id, foundMemo2.Relations[0].MemoId)
 }

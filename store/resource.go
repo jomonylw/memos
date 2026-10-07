@@ -40,6 +40,7 @@ type FindResource struct {
 	CreatorID      *int32
 	Filename       *string
 	MemoID         *int32
+	MemoIDList     []int32
 	HasRelatedMemo bool
 	Limit          *int
 	Offset         *int

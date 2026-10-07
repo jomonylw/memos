@@ -41,6 +41,7 @@ type APIV2Service struct {
 
 	grpcServer     *grpc.Server
 	grpcServerPort int
+	grpcConn       *grpc.ClientConn
 }
 
 func NewAPIV2Service(secret string, profile *profile.Profile, store *store.Store, grpcServerPort int) *APIV2Service {
@@ -102,18 +103,44 @@ func (s *APIV2Service) GetGRPCServer() *grpc.Server {
 	return s.grpcServer
 }
 
+func (s *APIV2Service) Close() {
+	if s.grpcServer != nil {
+		s.grpcServer.Stop()
+	}
+	if s.grpcConn != nil {
+		_ = s.grpcConn.Close()
+	}
+}
+
 // RegisterGateway registers the gRPC-Gateway with the given Echo instance.
 func (s *APIV2Service) RegisterGateway(ctx context.Context, e *echo.Echo) error {
+	// Start gRPC server.
+	listen, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.Profile.Addr, s.grpcServerPort))
+	if err != nil {
+		return errors.Wrap(err, "failed to start gRPC server")
+	}
+	go func() {
+		if err := s.grpcServer.Serve(listen); err != nil {
+			log.Error("grpc server listen error", zap.Error(err))
+		}
+	}()
+
+	target := fmt.Sprintf("127.0.0.1:%d", s.grpcServerPort)
+	if s.Profile.Addr != "" && s.Profile.Addr != "0.0.0.0" {
+		target = fmt.Sprintf("%s:%d", s.Profile.Addr, s.grpcServerPort)
+	}
+
 	// Create a client connection to the gRPC Server we just started.
 	// This is where the gRPC-Gateway proxies the requests.
 	conn, err := grpc.DialContext(
 		ctx,
-		fmt.Sprintf(":%d", s.grpcServerPort),
+		target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
 		return err
 	}
+	s.grpcConn = conn
 
 	gwMux := runtime.NewServeMux()
 	if err := apiv2pb.RegisterSystemServiceHandler(context.Background(), gwMux, conn); err != nil {
@@ -157,17 +184,6 @@ func (s *APIV2Service) RegisterGateway(ctx context.Context, e *echo.Echo) error 
 	}
 	wrappedGrpc := grpcweb.WrapServer(s.grpcServer, options...)
 	e.Any("/memos.api.v2.*", echo.WrapHandler(wrappedGrpc))
-
-	// Start gRPC server.
-	listen, err := net.Listen("tcp", fmt.Sprintf("%s:%d", s.Profile.Addr, s.grpcServerPort))
-	if err != nil {
-		return errors.Wrap(err, "failed to start gRPC server")
-	}
-	go func() {
-		if err := s.grpcServer.Serve(listen); err != nil {
-			log.Error("grpc server listen error", zap.Error(err))
-		}
-	}()
 
 	return nil
 }

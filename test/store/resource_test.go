@@ -64,3 +64,68 @@ func TestResourceStore(t *testing.T) {
 	require.Error(t, err)
 	ts.Close()
 }
+
+func TestResourceStoreBatchByMemoIDList(t *testing.T) {
+	ctx := context.Background()
+	ts := NewTestingStore(ctx, t)
+	defer ts.Close()
+
+	memoID1 := int32(10)
+	memoID2 := int32(20)
+	memoID3 := int32(30)
+
+	_, err := ts.CreateResource(ctx, &store.Resource{
+		CreatorID: 101,
+		Filename:  "file1.png",
+		MemoID:    &memoID1,
+	})
+	require.NoError(t, err)
+
+	_, err = ts.CreateResource(ctx, &store.Resource{
+		CreatorID: 101,
+		Filename:  "file2.png",
+		MemoID:    &memoID2,
+	})
+	require.NoError(t, err)
+
+	_, err = ts.CreateResource(ctx, &store.Resource{
+		CreatorID: 101,
+		Filename:  "file3.png",
+		MemoID:    &memoID3,
+	})
+	require.NoError(t, err)
+
+	// Query resources belonging to memo 10 and 20
+	resources, err := ts.ListResources(ctx, &store.FindResource{
+		MemoIDList: []int32{memoID1, memoID2},
+	})
+	require.NoError(t, err)
+	require.Len(t, resources, 2)
+
+	// Query memo relations batch
+	_, err = ts.UpsertMemoRelation(ctx, &store.MemoRelation{
+		MemoID:        memoID1,
+		RelatedMemoID: memoID2,
+		Type:          store.MemoRelationReference,
+	})
+	require.NoError(t, err)
+
+	_, err = ts.UpsertMemoRelation(ctx, &store.MemoRelation{
+		MemoID:        memoID2,
+		RelatedMemoID: memoID3,
+		Type:          store.MemoRelationComment,
+	})
+	require.NoError(t, err)
+
+	relationsByMemoID, err := ts.ListMemoRelations(ctx, &store.FindMemoRelation{
+		MemoIDList: []int32{memoID1, memoID2},
+	})
+	require.NoError(t, err)
+	require.Len(t, relationsByMemoID, 2)
+
+	relationsByRelatedMemoID, err := ts.ListMemoRelations(ctx, &store.FindMemoRelation{
+		RelatedMemoIDList: []int32{memoID2, memoID3},
+	})
+	require.NoError(t, err)
+	require.Len(t, relationsByRelatedMemoID, 2)
+}

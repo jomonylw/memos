@@ -20,9 +20,11 @@ type MemoRelation struct {
 }
 
 type FindMemoRelation struct {
-	MemoID        *int32
-	RelatedMemoID *int32
-	Type          *MemoRelationType
+	MemoID            *int32
+	MemoIDList        []int32
+	RelatedMemoID     *int32
+	RelatedMemoIDList []int32
+	Type              *MemoRelationType
 }
 
 type DeleteMemoRelation struct {

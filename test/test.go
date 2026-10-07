@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/joho/godotenv"
@@ -12,17 +13,26 @@ import (
 	"github.com/usememos/memos/server/version"
 )
 
-func getUnusedPort() int {
-	// Get a random unused port
-	listener, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		panic(err)
-	}
-	defer listener.Close()
+var testPortMu sync.Mutex
 
-	// Get the port number
-	port := listener.Addr().(*net.TCPAddr).Port
-	return port
+func getUnusedPort() int {
+	testPortMu.Lock()
+	defer testPortMu.Unlock()
+
+	for {
+		l1, err := net.Listen("tcp", "localhost:0")
+		if err != nil {
+			panic(err)
+		}
+		port := l1.Addr().(*net.TCPAddr).Port
+		l2, err := net.Listen("tcp", fmt.Sprintf("localhost:%d", port+1))
+		if err == nil {
+			l1.Close()
+			l2.Close()
+			return port
+		}
+		l1.Close()
+	}
 }
 
 func GetTestingProfile(t *testing.T) *profile.Profile {

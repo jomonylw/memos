@@ -35,6 +35,14 @@ func (d *DB) ListResources(ctx context.Context, find *store.FindResource) ([]*st
 	if v := find.MemoID; v != nil {
 		where, args = append(where, "memo_id = "+placeholder(len(args)+1)), append(args, *v)
 	}
+	if len(find.MemoIDList) > 0 {
+		list := []string{}
+		for _, memoID := range find.MemoIDList {
+			args = append(args, memoID)
+			list = append(list, placeholder(len(args)))
+		}
+		where = append(where, fmt.Sprintf("memo_id IN (%s)", strings.Join(list, ", ")))
+	}
 	if find.HasRelatedMemo {
 		where = append(where, "memo_id IS NOT NULL")
 	}

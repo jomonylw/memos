@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/usememos/memos/store"
@@ -35,8 +36,24 @@ func (d *DB) ListMemoRelations(ctx context.Context, find *store.FindMemoRelation
 	if find.MemoID != nil {
 		where, args = append(where, "`memo_id` = ?"), append(args, find.MemoID)
 	}
+	if len(find.MemoIDList) > 0 {
+		list := []string{}
+		for _, memoID := range find.MemoIDList {
+			args = append(args, memoID)
+			list = append(list, "?")
+		}
+		where = append(where, fmt.Sprintf("`memo_id` IN (%s)", strings.Join(list, ", ")))
+	}
 	if find.RelatedMemoID != nil {
 		where, args = append(where, "`related_memo_id` = ?"), append(args, find.RelatedMemoID)
+	}
+	if len(find.RelatedMemoIDList) > 0 {
+		list := []string{}
+		for _, memoID := range find.RelatedMemoIDList {
+			args = append(args, memoID)
+			list = append(list, "?")
+		}
+		where = append(where, fmt.Sprintf("`related_memo_id` IN (%s)", strings.Join(list, ", ")))
 	}
 	if find.Type != nil {
 		where, args = append(where, "`type` = ?"), append(args, find.Type)
