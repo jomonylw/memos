@@ -301,8 +301,14 @@ export const normalizeMemoNodes = (nodes: Node[]): Node[] => {
 };
 
 let widgetsLoadPromise: Promise<TwitterWidgetsApi> | null = null;
+let widgetsLoadFailed = false;
 
-export const loadTwitterWidgets = (timeoutMs = 6000): Promise<TwitterWidgetsApi> => {
+export const resetTwitterWidgetsLoadState = () => {
+  widgetsLoadPromise = null;
+  widgetsLoadFailed = false;
+};
+
+export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi> => {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("window is undefined"));
   }
@@ -311,26 +317,38 @@ export const loadTwitterWidgets = (timeoutMs = 6000): Promise<TwitterWidgetsApi>
     return Promise.resolve(window.twttr.widgets);
   }
 
+  if (widgetsLoadFailed) {
+    return Promise.reject(new Error("Twitter widgets previously failed to load"));
+  }
+
   if (widgetsLoadPromise) {
     return widgetsLoadPromise;
   }
 
   widgetsLoadPromise = new Promise<TwitterWidgetsApi>((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
 
     const cleanup = () => {
       if (timer) clearTimeout(timer);
+      if (pollInterval) clearInterval(pollInterval);
+    };
+
+    const handleFail = (reason: string) => {
+      cleanup();
+      widgetsLoadPromise = null;
+      widgetsLoadFailed = true;
+      reject(new Error(reason));
     };
 
     timer = setTimeout(() => {
-      cleanup();
-      widgetsLoadPromise = null;
-      reject(new Error("Twitter widgets load timeout"));
+      handleFail("Twitter widgets load timeout");
     }, timeoutMs);
 
     const checkReady = (): boolean => {
       if (window.twttr?.widgets) {
         cleanup();
+        widgetsLoadFailed = false;
         resolve(window.twttr.widgets);
         return true;
       }
@@ -339,48 +357,36 @@ export const loadTwitterWidgets = (timeoutMs = 6000): Promise<TwitterWidgetsApi>
 
     if (checkReady()) return;
 
-    const existingScript = document.querySelector('script[src*="platform.twitter.com/widgets.js"], script[src*="platform.x.com/widgets.js"]');
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src*="platform.twitter.com/widgets.js"], script[src*="platform.x.com/widgets.js"]'
+    );
     if (!existingScript) {
       const script = document.createElement("script");
       script.src = "https://platform.twitter.com/widgets.js";
       script.async = true;
       script.charset = "utf-8";
       script.onload = () => {
-        if (!checkReady()) {
-          if (window.twttr?.ready) {
-            window.twttr.ready((twttr: any) => {
-              cleanup();
-              resolve(twttr.widgets);
-            });
-          } else {
-            const interval = setInterval(() => {
-              if (checkReady()) {
-                clearInterval(interval);
-              }
-            }, 50);
-            setTimeout(() => clearInterval(interval), 2000);
-          }
+        if (!checkReady() && window.twttr?.ready) {
+          window.twttr.ready((twttr: any) => {
+            cleanup();
+            widgetsLoadFailed = false;
+            resolve(twttr.widgets);
+          });
         }
       };
       script.onerror = () => {
-        cleanup();
-        widgetsLoadPromise = null;
-        reject(new Error("Failed to load Twitter widgets script"));
+        handleFail("Failed to load Twitter widgets script");
       };
       document.head.appendChild(script);
     } else {
       existingScript.addEventListener("error", () => {
-        cleanup();
-        widgetsLoadPromise = null;
-        reject(new Error("Failed to load Twitter widgets script"));
+        handleFail("Failed to load Twitter widgets script");
       });
-      const interval = setInterval(() => {
-        if (checkReady()) {
-          clearInterval(interval);
-        }
-      }, 50);
-      setTimeout(() => clearInterval(interval), timeoutMs);
     }
+
+    pollInterval = setInterval(() => {
+      checkReady();
+    }, 50);
   });
 
   return widgetsLoadPromise;

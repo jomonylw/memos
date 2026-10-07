@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
-import { TweetEmbedInfo, loadTwitterWidgets } from "./utils/tweet";
+import { TweetEmbedInfo, loadTwitterWidgets, parseTweetBlockquote } from "./utils/tweet";
 
 interface Props {
   embedInfo: TweetEmbedInfo;
@@ -9,6 +9,7 @@ interface Props {
 
 const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [tweetInfo, setTweetInfo] = useState<TweetEmbedInfo>(embedInfo);
   const [status, setStatus] = useState<"loading" | "rendered" | "fallback">("loading");
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light"
@@ -31,6 +32,44 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
     return () => observer.disconnect();
   }, []);
 
+  // Update tweetInfo if prop changes
+  useEffect(() => {
+    setTweetInfo(embedInfo);
+  }, [embedInfo]);
+
+  // Try fetching oembed data to enrich fallback card if text is not available
+  useEffect(() => {
+    if (tweetInfo.text || !tweetInfo.url) return;
+
+    let isCancelled = false;
+    const fetchOembed = async () => {
+      try {
+        const res = await fetch(`https://publish.twitter.com/oembed?url=${encodeURIComponent(tweetInfo.url)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isCancelled || !data?.html) return;
+
+        const parsed = parseTweetBlockquote(data.html);
+        if (parsed) {
+          setTweetInfo((prev) => ({
+            ...prev,
+            authorName: prev.authorName || parsed.authorName || data.author_name,
+            text: prev.text || parsed.text,
+            dateText: prev.dateText || parsed.dateText,
+          }));
+        }
+      } catch {
+        // Silently ignore oembed errors
+      }
+    };
+
+    fetchOembed();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [tweetInfo.url, tweetInfo.text]);
+
   // Render tweet via widgets.js or fallback
   useEffect(() => {
     let isCancelled = false;
@@ -42,14 +81,19 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
       containerRef.current.innerHTML = "";
 
       try {
-        const widgets = await loadTwitterWidgets(6000);
+        const widgets = await loadTwitterWidgets(4000);
         if (isCancelled || !containerRef.current) return;
 
-        const el = await widgets.createTweet(embedInfo.tweetId, containerRef.current, {
+        // Use Promise.race with timeout so widgets.createTweet never hangs indefinitely
+        const renderPromise = widgets.createTweet(tweetInfo.tweetId, containerRef.current, {
           theme,
           dnt: true,
           align: "center",
         });
+
+        const timeoutPromise = new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Twitter render timeout")), 4500));
+
+        const el = await Promise.race([renderPromise, timeoutPromise]);
 
         if (isCancelled) return;
 
@@ -71,18 +115,20 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
     return () => {
       isCancelled = true;
     };
-  }, [embedInfo.tweetId, theme]);
+  }, [tweetInfo.tweetId, theme]);
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation();
   };
 
   return (
-    <div className={`w-full my-2.5 flex flex-col items-center select-text ${className || ""}`} onClick={handleCardClick}>
-      {/* Official widget render target */}
+    <div className={`w-full my-2.5 flex flex-col items-center select-text relative ${className || ""}`} onClick={handleCardClick}>
+      {/* Official widget render target: Keep in layout flow so widgets.js can measure it */}
       <div
         ref={containerRef}
-        className={`w-full flex justify-center [&_.twitter-tweet]:mx-auto ${status === "rendered" ? "block" : "hidden"}`}
+        className={`w-full max-w-[550px] flex justify-center [&_.twitter-tweet]:mx-auto transition-opacity duration-200 ${
+          status === "rendered" ? "opacity-100" : status === "loading" ? "opacity-0 absolute top-0 pointer-events-none -z-10" : "hidden"
+        }`}
       />
 
       {/* Loading Skeleton */}
@@ -121,15 +167,15 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
               </div>
               <div className="min-w-0 truncate">
                 <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-tight truncate">
-                  {embedInfo.authorName || (embedInfo.authorUsername ? `@${embedInfo.authorUsername}` : "X / Twitter")}
+                  {tweetInfo.authorName || (tweetInfo.authorUsername ? `@${tweetInfo.authorUsername}` : "X / Twitter")}
                 </div>
-                {embedInfo.authorUsername && (
-                  <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">@{embedInfo.authorUsername}</div>
+                {tweetInfo.authorUsername && (
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate">@{tweetInfo.authorUsername}</div>
                 )}
               </div>
             </div>
             <a
-              href={embedInfo.url}
+              href={tweetInfo.url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
@@ -142,23 +188,26 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
           </div>
 
           {/* Tweet Text (if available) */}
-          {embedInfo.text ? (
-            <div className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed my-2">{embedInfo.text}</div>
+          {tweetInfo.text ? (
+            <div className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed my-2">{tweetInfo.text}</div>
           ) : (
-            <div className="text-xs text-zinc-500 dark:text-zinc-400 my-2 italic">Post #{embedInfo.tweetId}</div>
+            <div className="text-sm text-zinc-600 dark:text-zinc-400 my-2">
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">Post #{tweetInfo.tweetId}</span>
+              <span className="ml-1 text-xs text-zinc-400 dark:text-zinc-500">· Click below to view on X</span>
+            </div>
           )}
 
           {/* Footer */}
           <div className="mt-2.5 pt-2 flex items-center justify-between border-t border-zinc-200/60 dark:border-zinc-800/60 text-xs text-zinc-400 dark:text-zinc-500">
-            <div>{embedInfo.dateText || "Post on X (Twitter)"}</div>
+            <div>{tweetInfo.dateText || "Post on X (Twitter)"}</div>
             <a
-              href={embedInfo.url}
+              href={tweetInfo.url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
               className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 inline-flex items-center gap-1 font-medium"
             >
-              <span>Open original post</span>
+              <span>Open on X</span>
               <Icon.ArrowUpRight className="w-3.5 h-3.5" />
             </a>
           </div>
