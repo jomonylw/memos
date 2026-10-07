@@ -40,11 +40,13 @@ func (*AutoLinkParser) Match(tokens []*tokenizer.Token) (int, bool) {
 	}
 
 	content := tokenizer.Stringify(contentTokens)
-	if !hasAngleBrackets {
-		u, err := url.Parse(content)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return 0, false
-		}
+	urlStr := content
+	if hasAngleBrackets {
+		urlStr = tokenizer.Stringify(contentTokens[1 : len(contentTokens)-1])
+	}
+	u, err := url.Parse(urlStr)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return 0, false
 	}
 
 	return len(contentTokens), true

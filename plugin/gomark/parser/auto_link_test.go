@@ -26,6 +26,10 @@ func TestAutoLinkParser(t *testing.T) {
 			},
 		},
 		{
+			text: "<iframe src=\"https://example.com\"></iframe>",
+			link: nil,
+		},
+		{
 			text: "https://example.com",
 			link: &ast.AutoLink{
 				URL:       "https://example.com",
