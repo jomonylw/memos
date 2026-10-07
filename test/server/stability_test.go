@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -290,3 +293,74 @@ func TestListMemosV2BatchRelationsAndResources(t *testing.T) {
 	require.Len(t, foundMemo2.Relations, 1)
 	require.Equal(t, memo1.Id, foundMemo2.Relations[0].MemoId)
 }
+
+func TestStreamResourceThumbnailCacheAndETag(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewTestingServer(ctx, t)
+	require.NoError(t, err)
+	defer s.Shutdown(ctx)
+
+	user, err := s.postAuthSignUp(&apiv1.SignUp{
+		Username: "thumbuser",
+		Password: "thumbpassword",
+	})
+	require.NoError(t, err)
+
+	// Generate a 100x100 test PNG image
+	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	for x := 0; x < 100; x++ {
+		for y := 0; y < 100; y++ {
+			img.Set(x, y, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+		}
+	}
+	var imgBuf bytes.Buffer
+	require.NoError(t, png.Encode(&imgBuf, img))
+
+	// Save original image to disk
+	tmpDir := t.TempDir()
+	originalPath := filepath.Join(tmpDir, "test.png")
+	require.NoError(t, os.WriteFile(originalPath, imgBuf.Bytes(), 0o644))
+
+	res, err := s.server.Store.CreateResource(ctx, &store.Resource{
+		CreatorID:    user.ID,
+		Filename:     "test.png",
+		Type:         "image/png",
+		Size:         int64(imgBuf.Len()),
+		InternalPath: originalPath,
+	})
+	require.NoError(t, err)
+
+	echoServer := s.server.GetEcho()
+
+	// 1. Initial request with thumbnail=1 should generate thumbnail and return 200 OK + ETag
+	req1 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/o/r/%d?thumbnail=1", res.ID), nil)
+	rec1 := httptest.NewRecorder()
+	echoServer.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusOK, rec1.Code)
+	etag := rec1.Header().Get("ETag")
+	require.NotEmpty(t, etag)
+	require.Contains(t, etag, "thumb")
+
+	// Verify thumbnail was saved to .thumbnail_cache
+	cachedPath := filepath.Join(s.profile.Data, ".thumbnail_cache", fmt.Sprintf("%d.png", res.ID))
+	cachedInfo, err := os.Stat(cachedPath)
+	require.NoError(t, err)
+	require.Greater(t, cachedInfo.Size(), int64(0))
+
+	// 2. Request with matching If-None-Match should return 304 Not Modified
+	req2 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/o/r/%d?thumbnail=1", res.ID), nil)
+	req2.Header.Set("If-None-Match", etag)
+	rec2 := httptest.NewRecorder()
+	echoServer.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusNotModified, rec2.Code)
+	require.Empty(t, rec2.Body.Bytes())
+
+	// 3. Delete original source file; thumbnail should still serve from disk cache directly without errors
+	require.NoError(t, os.Remove(originalPath))
+	req3 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/o/r/%d?thumbnail=1", res.ID), nil)
+	rec3 := httptest.NewRecorder()
+	echoServer.ServeHTTP(rec3, req3)
+	require.Equal(t, http.StatusOK, rec3.Code)
+	require.Greater(t, len(rec3.Body.Bytes()), 0)
+}
+

@@ -36,5 +36,7 @@ VOLUME /var/opt/memos
 
 ENV MEMOS_MODE="prod"
 ENV MEMOS_PORT="5230"
+ENV GOMEMLIMIT="768MiB"
+ENV GOGC="50"
 
 ENTRYPOINT ["./memos"]

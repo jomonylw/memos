@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	"github.com/disintegration/imaging"
 	"github.com/labstack/echo/v4"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/usememos/memos/internal/log"
@@ -29,6 +30,29 @@ const (
 	// thumbnailImagePath is the directory to store image thumbnails.
 	thumbnailImagePath = ".thumbnail_cache"
 )
+
+// thumbnailSem limits concurrent image decoding so multiple simultaneous
+// requests don't spike server RAM with uncompressed RGBA pixel buffers.
+var thumbnailSem = make(chan struct{}, 2)
+
+var (
+	memReleaseTimer *time.Timer
+	memReleaseMu    sync.Mutex
+)
+
+// scheduleMemoryRelease triggers a garbage collection and returns unused
+// physical memory back to the OS after thumbnail processing finishes.
+func scheduleMemoryRelease() {
+	memReleaseMu.Lock()
+	defer memReleaseMu.Unlock()
+	if memReleaseTimer != nil {
+		memReleaseTimer.Stop()
+	}
+	memReleaseTimer = time.AfterFunc(3*time.Second, func() {
+		runtime.GC()
+		debug.FreeOSMemory()
+	})
+}
 
 type Service struct {
 	Profile *profile.Profile
@@ -54,9 +78,10 @@ func (s *Service) streamResource(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("ID is not a number: %s", c.Param("resourceId"))).SetInternal(err)
 	}
 
+	// 1. Fetch metadata only (GetBlob: false) so we don't load multi-megabyte blobs into RAM unnecessarily.
 	resource, err := s.Store.GetResource(ctx, &store.FindResource{
 		ID:      &resourceID,
-		GetBlob: true,
+		GetBlob: false,
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("Failed to find resource by ID: %v", resourceID)).SetInternal(err)
@@ -80,50 +105,132 @@ func (s *Service) streamResource(c echo.Context) error {
 		}
 	}
 
-	// A resource stored on disk is streamed straight from the file. It used to be
-	// read into memory in full first, so opening a page with many attachments
-	// allocated the size of every image at once. The blob is only needed when
-	// there is no file, or when a thumbnail has to be generated (which decodes
-	// the image anyway).
 	thumbnail := isThumbnailRequest(c, resource)
 
-	if resource.InternalPath != "" && !thumbnail {
+	// ETag conditional check
+	etag := fmt.Sprintf(`"%d-%d"`, resource.ID, resource.UpdatedTs)
+	if thumbnail {
+		etag = fmt.Sprintf(`"%d-%d-thumb"`, resource.ID, resource.UpdatedTs)
+	}
+	c.Response().Header().Set("ETag", etag)
+	if match := c.Request().Header.Get("If-None-Match"); match != "" {
+		if strings.Contains(match, etag) || match == "*" {
+			return c.NoContent(http.StatusNotModified)
+		}
+	}
+
+	if thumbnail {
+		ext := filepath.Ext(resource.Filename)
+		if ext == "" {
+			if strings.HasPrefix(strings.ToLower(resource.Type), "image/png") {
+				ext = ".png"
+			} else {
+				ext = ".jpg"
+			}
+		}
+		thumbnailPath := filepath.Join(s.Profile.Data, thumbnailImagePath, fmt.Sprintf("%d%s", resource.ID, ext))
+
+		// Fast path: thumbnail already generated on disk. Zero heap allocation, direct file stream.
+		if fi, err := os.Stat(thumbnailPath); err == nil && fi.Size() > 0 {
+			f, err := os.Open(thumbnailPath)
+			if err == nil {
+				defer f.Close()
+				return s.writeResource(c, resource, f)
+			}
+		}
+
+		// Slow path: thumbnail needs to be generated.
+		// Throttle concurrent decoders so multiple large images don't blow up server RAM.
+		select {
+		case thumbnailSem <- struct{}{}:
+			defer func() {
+				<-thumbnailSem
+				scheduleMemoryRelease()
+			}()
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		// Double-check existence inside semaphore
+		if fi, err := os.Stat(thumbnailPath); err == nil && fi.Size() > 0 {
+			f, err := os.Open(thumbnailPath)
+			if err == nil {
+				defer f.Close()
+				return s.writeResource(c, resource, f)
+			}
+		}
+
+		// Prepare source image reader
+		var srcReader io.Reader
+		if resource.InternalPath != "" {
+			srcFile, err := os.Open(s.resolveResourcePath(resource))
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError,
+					fmt.Sprintf("Failed to open the local resource: %s", resource.InternalPath)).SetInternal(err)
+			}
+			defer srcFile.Close()
+			srcReader = srcFile
+		} else {
+			// Database-stored resource: only fetch blob now when decoding is required
+			resWithBlob, err := s.Store.GetResource(ctx, &store.FindResource{
+				ID:      &resourceID,
+				GetBlob: true,
+			})
+			if err != nil || resWithBlob == nil || len(resWithBlob.Blob) == 0 {
+				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to fetch resource blob").SetInternal(err)
+			}
+			srcReader = bytes.NewReader(resWithBlob.Blob)
+		}
+
+		srcImg, err := imaging.Decode(srcReader, imaging.AutoOrientation(true))
+		if err != nil {
+			log.Warn(fmt.Sprintf("failed to decode thumbnail image %s", thumbnailPath), zap.Error(err))
+		} else {
+			thumbnailImage := imaging.Resize(srcImg, 512, 0, imaging.CatmullRom)
+			dstDir := filepath.Dir(thumbnailPath)
+			if err := os.MkdirAll(dstDir, os.ModePerm); err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to create thumbnail directory").SetInternal(err)
+			}
+			tmpPath := fmt.Sprintf("%s.tmp-%d%s", thumbnailPath, time.Now().UnixNano(), ext)
+			if err := imaging.Save(thumbnailImage, tmpPath); err == nil {
+				if err := os.Rename(tmpPath, thumbnailPath); err != nil {
+					_ = os.Remove(tmpPath)
+				}
+			} else {
+				log.Warn(fmt.Sprintf("failed to save thumbnail image %s", thumbnailPath), zap.Error(err))
+				_ = os.Remove(tmpPath)
+			}
+
+			if f, err := os.Open(thumbnailPath); err == nil {
+				defer f.Close()
+				return s.writeResource(c, resource, f)
+			}
+		}
+	}
+
+	// Serve original resource (non-thumbnail or fallback)
+	if resource.InternalPath != "" {
 		f, err := os.Open(s.resolveResourcePath(resource))
 		if err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError,
 				fmt.Sprintf("Failed to open the local resource: %s", resource.InternalPath)).SetInternal(err)
 		}
 		defer f.Close()
-
 		return s.writeResource(c, resource, f)
 	}
 
-	blob := resource.Blob
-	if resource.InternalPath != "" {
-		data, err := os.ReadFile(s.resolveResourcePath(resource))
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError,
-				fmt.Sprintf("Failed to read the local resource: %s", resource.InternalPath)).SetInternal(err)
-		}
-		blob = data
+	resWithBlob, err := s.Store.GetResource(ctx, &store.FindResource{
+		ID:      &resourceID,
+		GetBlob: true,
+	})
+	if err != nil || resWithBlob == nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to fetch resource blob").SetInternal(err)
 	}
-
-	if thumbnail {
-		ext := filepath.Ext(resource.Filename)
-		thumbnailPath := filepath.Join(s.Profile.Data, thumbnailImagePath, fmt.Sprintf("%d%s", resource.ID, ext))
-		thumbnailBlob, err := getOrGenerateThumbnailImage(blob, thumbnailPath)
-		if err != nil {
-			log.Warn(fmt.Sprintf("failed to get or generate local thumbnail with path %s", thumbnailPath), zap.Error(err))
-		} else {
-			blob = thumbnailBlob
-		}
-	}
-
-	return s.writeResource(c, resource, bytes.NewReader(blob))
+	return s.writeResource(c, resource, bytes.NewReader(resWithBlob.Blob))
 }
 
-// writeResource sends the resource body. Audio and video go through
-// http.ServeContent so that range requests keep working.
+// writeResource sends the resource body. Audio, video, and image go through
+// http.ServeContent so that range requests and Last-Modified / 304 keep working.
 func (*Service) writeResource(c echo.Context, resource *store.Resource, content io.ReadSeeker) error {
 	c.Response().Writer.Header().Set(echo.HeaderCacheControl, "max-age=3600")
 	c.Response().Writer.Header().Set(echo.HeaderContentSecurityPolicy, "default-src 'none'; script-src 'none'; img-src 'self'; media-src 'self'; sandbox;")
@@ -132,16 +239,23 @@ func (*Service) writeResource(c echo.Context, resource *store.Resource, content 
 	resourceType := strings.ToLower(resource.Type)
 	if strings.HasPrefix(resourceType, "text") {
 		resourceType = echo.MIMETextPlainCharsetUTF8
-	} else if strings.HasPrefix(resourceType, "video") || strings.HasPrefix(resourceType, "audio") {
-		http.ServeContent(c.Response(), c.Request(), resource.Filename, time.Unix(resource.UpdatedTs, 0), content)
-		return nil
+		return c.Stream(http.StatusOK, resourceType, content)
 	}
-	return c.Stream(http.StatusOK, resourceType, content)
+
+	if resourceType != "" {
+		c.Response().Header().Set(echo.HeaderContentType, resourceType)
+	}
+	modTime := time.Unix(resource.UpdatedTs, 0)
+	if resource.UpdatedTs == 0 {
+		modTime = time.Now()
+	}
+	http.ServeContent(c.Response(), c.Request(), resource.Filename, modTime, content)
+	return nil
 }
 
 // isThumbnailRequest reports whether the caller asked for a generated thumbnail.
 func isThumbnailRequest(c echo.Context, resource *store.Resource) bool {
-	return c.QueryParam("thumbnail") == "1" && util.HasPrefixes(resource.Type, "image/png", "image/jpeg")
+	return c.QueryParam("thumbnail") == "1" && util.HasPrefixes(strings.ToLower(resource.Type), "image/png", "image/jpeg", "image/jpg")
 }
 
 func (s *Service) resolveResourcePath(resource *store.Resource) string {
@@ -150,49 +264,4 @@ func (s *Service) resolveResourcePath(resource *store.Resource) string {
 		resourcePath = filepath.Join(s.Profile.Data, resourcePath)
 	}
 	return resourcePath
-}
-
-var availableGeneratorAmount int32 = 32
-
-func getOrGenerateThumbnailImage(srcBlob []byte, dstPath string) ([]byte, error) {
-	if _, err := os.Stat(dstPath); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, errors.Wrap(err, "failed to check thumbnail image stat")
-		}
-
-		if atomic.LoadInt32(&availableGeneratorAmount) <= 0 {
-			return nil, errors.New("not enough available generator amount")
-		}
-		atomic.AddInt32(&availableGeneratorAmount, -1)
-		defer func() {
-			atomic.AddInt32(&availableGeneratorAmount, 1)
-		}()
-
-		reader := bytes.NewReader(srcBlob)
-		src, err := imaging.Decode(reader, imaging.AutoOrientation(true))
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to decode thumbnail image")
-		}
-		thumbnailImage := imaging.Resize(src, 512, 0, imaging.Lanczos)
-
-		dstDir := filepath.Dir(dstPath)
-		if err := os.MkdirAll(dstDir, os.ModePerm); err != nil {
-			return nil, errors.Wrap(err, "failed to create thumbnail dir")
-		}
-
-		if err := imaging.Save(thumbnailImage, dstPath); err != nil {
-			return nil, errors.Wrap(err, "failed to resize thumbnail image")
-		}
-	}
-
-	dstFile, err := os.Open(dstPath)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to open the local resource")
-	}
-	defer dstFile.Close()
-	dstBlob, err := io.ReadAll(dstFile)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to read the local resource")
-	}
-	return dstBlob, nil
 }
