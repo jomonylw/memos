@@ -85,9 +85,11 @@ if _, err := d.db.Exec("VACUUM"); err != nil {
 | # | 修改 | 说明 |
 |---|------|------|
 | 1 | **移除运行时全库 `VACUUM`** | 删除后改为 `PRAGMA wal_checkpoint(TRUNCATE)`，瞬时完成，不重写数据、不长时间持锁，且失败不影响删除操作 |
-| 2 | **启用增量自动回收** | `PRAGMA auto_vacuum=INCREMENTAL` + `incremental_vacuum`，空间仍会自动回收，但不再需要阻塞式全库重写（这是保留单文件 SQLite 的关键） |
+| 2 | **启用增量自动回收** | `auto_vacuum(INCREMENTAL)` 写入 DSN（必须排在 `journal_mode` 之前，否则会被静默忽略）+ `incremental_vacuum`，空间仍会自动回收，但不再需要阻塞式全库重写（这是保留单文件 SQLite 的关键） |
 | 3 | **限制连接池** | `SetMaxOpenConns(4)` / `SetMaxIdleConns(4)` / `SetConnMaxLifetime(1h)`，防止图片请求占满连接导致其他查询饿死 |
 | 4 | **加固 PRAGMA** | `busy_timeout` 10s → 30s，新增 `synchronous(NORMAL)` 与 `cache_size(-65536)`（64MB 页缓存） |
+| 5 | **修复全新部署迁移失败** | `Migrate` 原以「文件是否存在」判断新库，但打开数据库的 PRAGMA 已会创建文件，导致全新 prod 部署报 `no such table: migration_history`。改为判断「是否无任何用户表」 |
+| 6 | **修复静态资源缓存导致的白屏** | 为 `/assets/*` 增加独立路由，缺失资源返回 404 而非回退 index.html；`index.html` 设 `no-cache`，带 hash 的资源设 `immutable` |
 
 > ⚠️ **注意**：本补丁**不修改数据库结构**，无需迁移，可直接覆盖部署。但它**修复的是「永久失联」**，并不会缩小已有数据库体积。
 
@@ -95,15 +97,39 @@ if _, err := d.db.Exec("VACUUM"); err != nil {
 
 本补丁的目的正是让**单文件 SQLite 存储**在大数据量下继续可用。若改用 Local Storage 存储附件，同样能规避该问题，但会改变数据存储方式，故未采用。
 
+### 新增诊断日志
+
+排查问题时可直接看容器日志，无需 attach 数据库：
+
+| 日志关键字 | 含义 / 排查方向 |
+|---|---|
+| `starting memos` | 启动时的 version / mode / driver / data_dir。**若未出现，说明 profile 加载失败** |
+| `sqlite database configured` | 启动即打印 `journal_mode`、`auto_vacuum`、`page_count`、`freelist_count`、`db_size_bytes`、`free_bytes`、`max_open_conns` |
+| `sqlite auto_vacuum is not incremental` | **需要执行一次离线 `VACUUM`**（见下节）。修复前该 PRAGMA 被静默忽略，故此告警是判断是否已切换成功的唯一依据 |
+| `sqlite connection pool` | 每 30 秒打印连接池 `open_connections / in_use / idle / wait_count / wait_duration` |
+| `sqlite connection pool saturated` | 池已打满。若持续出现且请求变慢，说明有慢查询或长事务占住了连接 |
+| `sqlite vacuum begin` / `sqlite vacuum done` | 删除操作前后的空闲页统计与耗时。**耗时若随数据库增大而变长，说明全库重写又回来了** |
+| `slow request` | 超过 3s 的请求（含 uri 与 latency）。v2 API 无超时机制，卡住的请求只能靠这条暴露 |
+| `frontend assets verified` | 启动即校验 `index.html` 引用的资源是否都存在，并记录 `index_sha256`。**若报 `index.html references assets that do not exist`，说明镜像构建有问题** |
+| `requested frontend asset does not exist` | 浏览器请求了当前构建不存在的资源。**这条就是白屏的直接原因**，出现时请清理该站点浏览器缓存 |
+
+> 💡 **白屏自查**：看到白屏时先在日志里搜 `frontend assets`。若出现 `requested frontend asset does not exist`，是浏览器缓存了旧版 `index.html`，清理该站点缓存或强制刷新即可。
+
 ### 验证
 
-新增回归测试 `store/db/sqlite/pool_verify_test.go`：40 个并发 blob 读取在途时，一个无关的 `COUNT(*)` 查询必须及时返回。
+新增回归测试：
 
 ```bash
-go test ./store/db/sqlite/ -run TestPoolNotStarvedByConcurrentReads -v
+# 空白页：缺失资源必须返回 404，且 index.html 不可缓存
+go test ./server/frontend/ -v
+
+# SQLite：连接池上限、auto_vacuum 生效、删除不触发全库重写、全新部署可迁移
+go test ./store/db/sqlite/ -v
 ```
 
-修改前该测试会因连接池无上限而挂死；修改后即时通过。
+其中 `TestVacuumDoesNotRewriteWholeDatabase` 会构造约 48MB 的附件库并计时删除操作，
+防止全库 `VACUUM` 被重新引入；`TestMigrateAppliesSchemaOnFreshDatabase` 防止全新
+部署因迁移判断错误而启动失败。
 
 ### 部署后建议：离线回收数据库空间
 

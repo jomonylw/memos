@@ -46,6 +46,21 @@ var (
 		Short: `An open-source, self-hosted memo hub with knowledge management and social networking.`,
 		Run: func(_cmd *cobra.Command, _args []string) {
 			ctx, cancel := context.WithCancel(context.Background())
+
+			if profile == nil {
+				cancel()
+				log.Error("failed to load server profile; check MEMOS_* environment variables")
+				return
+			}
+
+			log.Info("starting memos",
+				zap.String("version", profile.Version),
+				zap.String("mode", profile.Mode),
+				zap.String("driver", profile.Driver),
+				zap.String("addr", profile.Addr),
+				zap.Int("port", profile.Port),
+				zap.String("data_dir", profile.Data))
+
 			dbDriver, err := db.NewDBDriver(profile)
 			if err != nil {
 				cancel()

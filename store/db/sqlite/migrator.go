@@ -26,21 +26,27 @@ var seedFS embed.FS
 func (d *DB) Migrate(ctx context.Context) error {
 	currentVersion := version.GetCurrentVersion(d.profile.Mode)
 	if d.profile.Mode == "prod" {
-		_, err := os.Stat(d.profile.DSN)
+		// Decide whether this is a brand-new database by looking for the tables
+		// rather than by testing whether the file exists.
+		//
+		// Opening a SQLite database with a WAL or auto_vacuum pragma creates the file
+		// as a side effect, so by the time Migrate runs a fresh database already
+		// exists on disk. A file-existence check would then take the "existing
+		// database" path and fail on the missing migration_history table.
+		isNew, err := d.isEmptyDatabase(ctx)
 		if err != nil {
-			// If db file not exists, we should create a new one with latest schema.
-			if errors.Is(err, os.ErrNotExist) {
-				if err := d.applyLatestSchema(ctx); err != nil {
-					return errors.Wrap(err, "failed to apply latest schema")
-				}
-				// Upsert the newest version to migration_history.
-				if _, err := d.UpsertMigrationHistory(ctx, &store.UpsertMigrationHistory{
-					Version: currentVersion,
-				}); err != nil {
-					return errors.Wrap(err, "failed to upsert migration history")
-				}
-			} else {
-				return errors.Wrap(err, "failed to get db file stat")
+			return errors.Wrap(err, "failed to inspect database")
+		}
+		if isNew {
+			// If db is new, we should create a new one with latest schema.
+			if err := d.applyLatestSchema(ctx); err != nil {
+				return errors.Wrap(err, "failed to apply latest schema")
+			}
+			// Upsert the newest version to migration_history.
+			if _, err := d.UpsertMigrationHistory(ctx, &store.UpsertMigrationHistory{
+				Version: currentVersion,
+			}); err != nil {
+				return errors.Wrap(err, "failed to upsert migration history")
 			}
 		} else {
 			// If db file exists, we should check if we need to migrate the database.
@@ -102,7 +108,13 @@ func (d *DB) Migrate(ctx context.Context) error {
 		}
 	} else {
 		// In non-prod mode, we should always migrate the database.
-		if _, err := os.Stat(d.profile.DSN); errors.Is(err, os.ErrNotExist) {
+		// Use the same emptiness check as prod: NewDB's PRAGMA setup creates the file
+		// before Migrate runs, so a file-existence test would skip the schema.
+		isNew, err := d.isEmptyDatabase(ctx)
+		if err != nil {
+			return errors.Wrap(err, "failed to inspect database")
+		}
+		if isNew {
 			if err := d.applyLatestSchema(ctx); err != nil {
 				return errors.Wrap(err, "failed to apply latest schema")
 			}
@@ -121,6 +133,22 @@ func (d *DB) Migrate(ctx context.Context) error {
 const (
 	latestSchemaFileName = "LATEST__SCHEMA.sql"
 )
+
+// isEmptyDatabase reports whether the database contains no user tables, meaning it
+// still needs the initial schema applied.
+//
+// SQLite creates the database file as soon as a connection writes to it, so file
+// existence cannot distinguish a fresh database from an established one. The
+// presence of the migration_history table does.
+func (d *DB) isEmptyDatabase(ctx context.Context) (bool, error) {
+	var count int
+	err := d.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count == 0, nil
+}
 
 func (d *DB) applyLatestSchema(ctx context.Context) error {
 	schemaMode := "dev"

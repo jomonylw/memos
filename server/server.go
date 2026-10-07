@@ -11,9 +11,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	apiv1 "github.com/usememos/memos/api/v1"
 	apiv2 "github.com/usememos/memos/api/v2"
+	"github.com/usememos/memos/internal/log"
 	"github.com/usememos/memos/plugin/telegram"
 	"github.com/usememos/memos/server/frontend"
 	"github.com/usememos/memos/server/integration"
@@ -22,6 +24,11 @@ import (
 	versionchecker "github.com/usememos/memos/server/service/version_checker"
 	"github.com/usememos/memos/store"
 )
+
+// slowRequestThreshold is the latency above which a request is logged as a warning.
+// A list-memos request on a multi-GB database legitimately takes a second or two,
+// so the threshold is set well above normal query latency.
+const slowRequestThreshold = 3 * time.Second
 
 type Server struct {
 	e *echo.Echo
@@ -66,6 +73,13 @@ func NewServer(ctx context.Context, profile *profile.Profile, store *store.Store
 		Skipper: timeoutSkipper,
 		Timeout: 30 * time.Second,
 	}))
+
+	// Log slow requests. The v2 gRPC routes are excluded from the timeout
+	// middleware above, so a query blocked behind a long-running write (for
+	// example a WAL checkpoint on a multi-GB database) can hang indefinitely and
+	// produce no log entry at all until the client gives up. Flagging slow requests
+	// makes that visible.
+	e.Use(slowRequestMiddleware(slowRequestThreshold))
 
 	serverID, err := s.getSystemServerID(ctx)
 	if err != nil {
@@ -183,4 +197,31 @@ func timeoutSkipper(c echo.Context) bool {
 
 	// Skip timeout for blob upload which is frequently timed out.
 	return c.Request().Method == http.MethodPost && c.Request().URL.Path == "/api/v1/resource/blob"
+}
+
+// slowRequestMiddleware warns about requests that exceed the threshold. Unlike the
+// standard request logger, it records the latency of requests that hang, which is
+// what a blocked database looks like from the outside.
+func slowRequestMiddleware(threshold time.Duration) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			start := time.Now()
+			err := next(c)
+
+			elapsed := time.Since(start)
+			if elapsed >= threshold {
+				status := c.Response().Status
+				if err != nil {
+					status = http.StatusInternalServerError
+				}
+				log.Warn("slow request",
+					zap.String("method", c.Request().Method),
+					zap.String("uri", c.Request().RequestURI),
+					zap.Int("status", status),
+					zap.Duration("latency", elapsed),
+					zap.Duration("threshold", threshold))
+			}
+			return err
+		}
+	}
 }
