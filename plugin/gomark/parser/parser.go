@@ -34,6 +34,7 @@ var defaultBlockParsers = []BlockParser{
 	NewTableParser(),
 	NewHorizontalRuleParser(),
 	NewHeadingParser(),
+	NewHTMLBlockParser(),
 	NewBlockquoteParser(),
 	NewTaskListParser(),
 	NewUnorderedListParser(),

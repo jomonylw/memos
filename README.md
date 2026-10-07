@@ -219,12 +219,12 @@ services:
     restart: unless-stopped
 ```
 
-每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.7`（与 git tag 一致）以及 `:0.18.2-patch.7`（semver 形式）。
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.8`（与 git tag 一致）以及 `:0.18.2-patch.8`（semver 形式）。
 
 镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
 
 ```bash
-git tag v0.18.2-patch.7 && git push origin v0.18.2-patch.7
+git tag v0.18.2-patch.8 && git push origin v0.18.2-patch.8
 ```
 
 ### 版本说明
@@ -238,6 +238,7 @@ git tag v0.18.2-patch.7 && git push origin v0.18.2-patch.7
 | `v0.18.2-patch.5` | **消除 `ListMemos` (API v2) N+1 查询性能开销**（批量拉取 resources 与 relations、系统设置解析复用及 creator 缓存）、**修复全新安装空指针 Panic**（`CreateMemo` 系统设置未配置时的空安全保护）、**修复 macOS 环境下 gRPC Gateway 连接异常与测试端口冲突**、**补充 gRPC 服务优雅关闭及连接释放** |
 | `v0.18.2-patch.6` | **图片缩略图与内存优化**：单图 memo 自动加载缩略图（减少 ~95% 无谓流量）、磁盘缓存优先流式直出（0 堆内存分配）、限制并发图像解码（semaphore=2 防止 RAM 激增）、CatmullRom 快速平滑缩放、空闲触发内存主动归还操作系统、全链路 ETag / 304 协商缓存、Docker 默认环境变量 `GOMEMLIMIT=768MiB` 与 `GOGC=50` |
 | `v0.18.2-patch.7` | **安全 Iframe 嵌入与视频链接自动解析**：修复 Gomark 标签解析确保 raw `<iframe>` 完整传递；前端实现严格安全校验（拦截 `javascript:` 等恶意伪协议并启用沙箱隔离）；支持 YouTube 与哔哩哔哩（Bilibili）单行链接自动转换为播放器卡片；Click-to-Load 门面（Facade）按需加载（防追踪与省流量）；支持 YouTube 时间戳、B站分P与无防盗链跨域播放；行内视频链接播放标识 |
+| `v0.18.2-patch.8` | **Twitter / X 贴文嵌入完整支持**：扩展 Gomark 解析器以完整保留官方 `<blockquote class="twitter-tweet">` 及其脚本；前端支持单行推文链接与官方嵌入代码自动渲染为交互式 Twitter Widget；自动跟随深浅主题无缝切换；内置加载骨架屏；在加载超时、被广告拦截器或网络阻断时自动降级为原生精美卡片（支持作者、正文、发布时间与跳转链接）；普通混排链接增加 Twitter 图标标识 |
 
 > ⚠️ `patch.1` 的 `auto_vacuum` 实际未生效（运行时 PRAGMA 在 WAL 切换后是空操作），
 > 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.4` 或更新版本**。

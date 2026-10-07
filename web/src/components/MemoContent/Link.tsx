@@ -1,5 +1,6 @@
 import Icon from "@/components/Icon";
 import { parseVideoUrl } from "./utils/embed";
+import { parseTweetUrl } from "./utils/tweet";
 
 interface Props {
   url: string;
@@ -8,6 +9,7 @@ interface Props {
 
 const Link: React.FC<Props> = ({ text, url }: Props) => {
   const videoInfo = parseVideoUrl(url);
+  const tweetInfo = parseTweetUrl(url);
 
   return (
     <a
@@ -17,6 +19,7 @@ const Link: React.FC<Props> = ({ text, url }: Props) => {
       rel="noopener noreferrer"
     >
       {videoInfo && <Icon.Play className="w-3.5 h-3.5 inline shrink-0 fill-current opacity-70" />}
+      {tweetInfo && <Icon.Twitter className="w-3.5 h-3.5 inline shrink-0 fill-current opacity-70" />}
       <span>{text || url}</span>
     </a>
   );

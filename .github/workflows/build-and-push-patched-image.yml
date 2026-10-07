@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to build and push (e.g. v0.18.2-patch.7)'
+        description: 'Image tag to build and push (e.g. v0.18.2-patch.8)'
         required: true
-        default: 'v0.18.2-patch.7'
+        default: 'v0.18.2-patch.8'
 
 env:
   REGISTRY: ghcr.io

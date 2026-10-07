@@ -1,14 +1,21 @@
 import { Node, NodeType } from "@/types/proto/api/v2/markdown_service";
 import EmbeddedIframe from "./EmbeddedIframe";
+import EmbeddedTweet from "./EmbeddedTweet";
 import Renderer from "./Renderer";
 import { BaseProps } from "./types";
 import { extractIframeAttributes, parseVideoUrl } from "./utils/embed";
+import { extractTweetFromChildren } from "./utils/tweet";
 
 interface Props extends BaseProps {
   children: Node[];
 }
 
 const Paragraph: React.FC<Props> = ({ children }: Props) => {
+  const tweetInfo = extractTweetFromChildren(children);
+  if (tweetInfo) {
+    return <EmbeddedTweet embedInfo={tweetInfo} />;
+  }
+
   const nonWhitespaceChildren = children.filter((child) => {
     if (child.type === NodeType.TEXT) {
       return (child.textNode?.content || "").trim().length > 0;

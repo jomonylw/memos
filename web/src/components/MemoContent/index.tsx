@@ -1,9 +1,10 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { useMemoStore } from "@/store/v1";
 import { Node, NodeType } from "@/types/proto/api/v2/markdown_service";
 import Renderer from "./Renderer";
 import { RendererContext } from "./types";
+import { normalizeMemoNodes } from "./utils/tweet";
 
 interface Props {
   nodes: Node[];
@@ -21,6 +22,8 @@ const MemoContent: React.FC<Props> = (props: Props) => {
   const memoContentContainerRef = useRef<HTMLDivElement>(null);
   const allowEdit = !props.readonly && memoId && currentUser?.id === memoStore.getMemoById(memoId)?.creatorId;
 
+  const normalizedNodes = useMemo(() => normalizeMemoNodes(nodes), [nodes]);
+
   const handleMemoContentClick = async (e: React.MouseEvent) => {
     if (onClick) {
       onClick(e);
@@ -33,7 +36,7 @@ const MemoContent: React.FC<Props> = (props: Props) => {
   return (
     <RendererContext.Provider
       value={{
-        nodes,
+        nodes: normalizedNodes,
         memoId,
         readonly: !allowEdit,
         disableFilter: props.disableFilter,
@@ -45,7 +48,7 @@ const MemoContent: React.FC<Props> = (props: Props) => {
           className="w-full max-w-full word-break text-base leading-6 space-y-1 whitespace-pre-wrap"
           onClick={handleMemoContentClick}
         >
-          {nodes.map((node, index) => {
+          {normalizedNodes.map((node, index) => {
             if (prevNode?.type !== NodeType.LINE_BREAK && node.type === NodeType.LINE_BREAK && skipNextLineBreakFlag) {
               skipNextLineBreakFlag = false;
               return null;
