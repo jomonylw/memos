@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -234,7 +235,14 @@ func (s *Service) streamResource(c echo.Context) error {
 func (*Service) writeResource(c echo.Context, resource *store.Resource, content io.ReadSeeker) error {
 	c.Response().Writer.Header().Set(echo.HeaderCacheControl, "max-age=3600")
 	c.Response().Writer.Header().Set(echo.HeaderContentSecurityPolicy, "default-src 'none'; script-src 'none'; img-src 'self'; media-src 'self'; sandbox;")
-	c.Response().Writer.Header().Set("Content-Disposition", fmt.Sprintf(`filename="%s"`, resource.Filename))
+
+	disposition := "inline"
+	if c.QueryParam("download") == "1" || c.QueryParam("download") == "true" {
+		disposition = "attachment"
+	}
+	cleanFilename := strings.ReplaceAll(resource.Filename, "\"", "")
+	escapedFilename := url.PathEscape(cleanFilename)
+	c.Response().Writer.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"; filename*=UTF-8''%s`, disposition, cleanFilename, escapedFilename))
 
 	resourceType := strings.ToLower(resource.Type)
 	if strings.HasPrefix(resourceType, "text") {

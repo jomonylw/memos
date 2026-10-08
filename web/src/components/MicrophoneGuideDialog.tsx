@@ -22,19 +22,19 @@ const MicrophoneGuideDialog: React.FC<Props> = ({ destroy, reason }: Props) => {
 
   return (
     <>
-      <div className="dialog-header-container !w-96 max-w-full">
-        <div className="flex items-center gap-2">
-          <Icon.Mic className="w-5 h-5 text-blue-500" />
-          <p className="title-text !mb-0 font-medium text-base text-gray-800 dark:text-gray-200">
+      <div className="dialog-header-container w-full max-w-sm sm:w-96 flex items-center justify-between gap-3 !mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon.Mic className="w-5 h-5 text-blue-500 shrink-0" />
+          <p className="title-text !mb-0 font-medium text-base text-gray-800 dark:text-gray-200 truncate">
             {reason === "insecure-context" ? "麦克风需要 HTTPS 支持" : "麦克风访问指引"}
           </p>
         </div>
-        <IconButton size="sm" onClick={destroy}>
+        <IconButton size="sm" onClick={destroy} className="shrink-0 -mr-1">
           <Icon.X className="w-5 h-auto" />
         </IconButton>
       </div>
 
-      <div className="dialog-content-container !w-96 max-w-full flex flex-col gap-3 text-xs text-gray-600 dark:text-gray-300">
+      <div className="dialog-content-container w-full max-w-sm sm:w-96 flex flex-col gap-3 text-xs text-gray-600 dark:text-gray-300">
         {reason === "insecure-context" && (
           <>
             <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 leading-relaxed">

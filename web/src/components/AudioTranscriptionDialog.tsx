@@ -26,6 +26,7 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
   const [isSavingMemo, setIsSavingMemo] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [hasCopied, setHasCopied] = useState(false);
 
   const resourceUrl = getResourceUrl(resource);
 
@@ -75,7 +76,9 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
   const handleCopy = () => {
     if (!transcript) return;
     copy(transcript);
+    setHasCopied(true);
     toast.success("已复制转写文本到剪贴板");
+    setTimeout(() => setHasCopied(false), 2000);
   };
 
   const handleInsertToEditor = () => {
@@ -113,25 +116,28 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
       setIsSavingMemo(false);
     }
   };
+
   return (
     <>
-      <div className="dialog-header-container !w-[420px] max-w-full">
-        <div className="flex items-center gap-2">
-          <Icon.Sparkles className="w-5 h-5 text-blue-500" />
-          <p className="title-text !mb-0 font-medium text-base text-gray-800 dark:text-gray-200">语音转文字 (Deepgram Nova-3)</p>
+      <div className="dialog-header-container w-full max-w-[440px] flex items-center justify-between gap-3 !mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon.Sparkles className="w-5 h-5 text-blue-500 shrink-0" />
+          <p className="title-text !mb-0 font-medium text-base text-gray-800 dark:text-gray-200 truncate">语音转文字</p>
+          <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 shrink-0">
+            Nova-3
+          </span>
         </div>
-        <IconButton size="sm" onClick={destroy}>
+        <IconButton size="sm" onClick={destroy} className="shrink-0 -mr-1">
           <Icon.X className="w-5 h-auto" />
         </IconButton>
       </div>
 
-      <div className="dialog-content-container !w-[420px] max-w-full flex flex-col gap-3 text-xs text-gray-600 dark:text-gray-300">
-        <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700">
-          <div className="flex items-center gap-2 min-w-0">
+      <div className="dialog-content-container w-full max-w-[440px] flex flex-col gap-3 text-xs text-gray-600 dark:text-gray-300">
+        <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <Icon.FileAudio className="w-4 h-4 text-blue-500 shrink-0" />
-            <span className="truncate font-medium text-zinc-700 dark:text-zinc-200">{resource.filename}</span>
+            <span className="truncate font-medium text-zinc-700 dark:text-zinc-200 text-xs sm:text-sm">{resource.filename}</span>
           </div>
-          <span className="text-[11px] text-zinc-400 font-mono shrink-0 ml-2">Nova-3</span>
         </div>
 
         {!initialSetting.deepgramApiKey && !transcript && (
@@ -177,14 +183,23 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
         {transcript && (
           <div className="flex flex-col gap-1.5 mt-1">
             <div className="flex justify-between items-center text-zinc-500 text-[11px]">
-              <span>转写结果：</span>
+              <span className="font-medium text-zinc-600 dark:text-zinc-400">转写结果：</span>
               <button
                 type="button"
                 onClick={handleCopy}
-                className="hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors"
+                className="hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors px-1 py-0.5 rounded cursor-pointer"
               >
-                <Icon.Copy className="w-3 h-3" />
-                <span>复制文本</span>
+                {hasCopied ? (
+                  <>
+                    <Icon.Check className="w-3.5 h-3.5 text-green-500" />
+                    <span className="text-green-600 dark:text-green-400 font-medium">已复制</span>
+                  </>
+                ) : (
+                  <>
+                    <Icon.Copy className="w-3 h-3" />
+                    <span>复制文本</span>
+                  </>
+                )}
               </button>
             </div>
             <Textarea
@@ -192,17 +207,17 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
               maxRows={8}
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
-              className="font-sans text-sm"
+              className="font-sans text-sm leading-relaxed"
             />
           </div>
         )}
 
-        <div className="mt-2 w-full flex flex-row justify-between items-center gap-2">
-          <Button size="sm" variant="plain" color="neutral" onClick={destroy}>
+        <div className="mt-3 w-full flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+          <Button size="sm" variant="plain" color="neutral" onClick={destroy} className="shrink-0">
             关闭
           </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2 shrink-0">
             {!transcript ? (
               <Button
                 size="sm"
@@ -210,31 +225,48 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
                 loading={isTranscribing}
                 onClick={handleStartTranscribe}
                 startDecorator={<Icon.Sparkles className="w-4 h-4" />}
+                className="w-full sm:w-auto whitespace-nowrap"
               >
                 {isTranscribing ? "正在识别中..." : "开始转写"}
               </Button>
             ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="outlined"
-                  color="primary"
-                  onClick={handleCopy}
-                  startDecorator={<Icon.Copy className="w-3.5 h-3.5" />}
-                >
-                  复制
-                </Button>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                 {onTranscribeText && (
-                  <Button size="sm" color="primary" onClick={handleInsertToEditor}>
+                  <Button
+                    size="sm"
+                    color="primary"
+                    onClick={handleInsertToEditor}
+                    startDecorator={<Icon.Check className="w-3.5 h-3.5" />}
+                    className="whitespace-nowrap flex-1 sm:flex-initial"
+                  >
                     插入正文
                   </Button>
                 )}
                 {memoId && (
-                  <Button size="sm" color="success" loading={isSavingMemo} onClick={handleAppendToMemo}>
+                  <Button
+                    size="sm"
+                    color="success"
+                    loading={isSavingMemo}
+                    onClick={handleAppendToMemo}
+                    startDecorator={<Icon.Check className="w-3.5 h-3.5" />}
+                    className="whitespace-nowrap flex-1 sm:flex-initial"
+                  >
                     追加到此 Memo
                   </Button>
                 )}
-              </>
+                {!onTranscribeText && !memoId && (
+                  <Button
+                    size="sm"
+                    variant="outlined"
+                    color="primary"
+                    onClick={handleCopy}
+                    startDecorator={<Icon.Copy className="w-3.5 h-3.5" />}
+                    className="whitespace-nowrap flex-1 sm:flex-initial"
+                  >
+                    {hasCopied ? "已复制" : "复制文本"}
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </div>

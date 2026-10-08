@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import Icon from "@/components/Icon";
 import { Resource } from "@/types/proto/api/v2/resource_service";
 import { getResourceUrl } from "@/utils/resource";
@@ -45,6 +46,49 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [waveform, setWaveform] = useState<number[]>(() => generateFallbackWaveform(resourceUrl));
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isDownloading) return;
+    setIsDownloading(true);
+
+    const filename = resource.filename || `voice-memo-${resource.id || Date.now()}.webm`;
+
+    try {
+      // 1. Fetch file as blob for direct client-side download to avoid browser inline playback
+      const response = await fetch(resourceUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.statusText}`);
+      }
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      toast.success("已开始下载音频");
+    } catch (error) {
+      console.warn("Direct blob download failed, falling back to download link", error);
+      // Fallback: If CORS or other issue prevents fetching blob, trigger download with ?download=1
+      const downloadUrl = resourceUrl.includes("?") ? `${resourceUrl}&download=1` : `${resourceUrl}?download=1`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const updateDurationSafely = () => {
     const audio = audioRef.current;
@@ -169,30 +213,34 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
           setCurrentTime(0);
         }}
       />
-      <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-        <div className="flex items-center gap-1.5 min-w-0">
+      <div className="flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <Icon.Mic className="w-3.5 h-3.5 shrink-0 text-blue-500" />
-          <span className="truncate font-medium text-xs">{resource.filename || "Voice Memo"}</span>
+          <span className="truncate font-medium text-xs min-w-0">{resource.filename || "Voice Memo"}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => showAudioTranscriptionDialog({ resource, memoId: resource.memoId })}
-            className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100/80 px-1.5 py-0.5 rounded transition-colors"
+            className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100/80 px-2 py-0.5 rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             title="转写为文字 (Deepgram Nova-3)"
           >
-            <Icon.Sparkles className="w-3 h-3" />
-            <span>转写</span>
+            <Icon.Sparkles className="w-3 h-3 shrink-0" />
+            <span className="whitespace-nowrap">转写</span>
           </button>
-          <a
-            href={resourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-blue-600 dark:hover:text-blue-400 p-0.5 rounded transition-colors"
-            title="Download audio"
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="hover:text-blue-600 dark:hover:text-blue-400 p-0.5 rounded transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+            title="下载音频"
           >
-            <Icon.Download className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
-          </a>
+            {isDownloading ? (
+              <Icon.Loader className="w-3.5 h-3.5 animate-spin text-blue-500" />
+            ) : (
+              <Icon.Download className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
+            )}
+          </button>
         </div>
       </div>
 

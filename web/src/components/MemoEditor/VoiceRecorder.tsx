@@ -10,9 +10,11 @@ import { Resource } from "@/types/proto/api/v2/resource_service";
 interface Props {
   onAudioRecorded: (file: File) => Promise<Resource | undefined>;
   onTranscribeText?: (text: string) => void;
+  onRecordingStateChange?: (isRecording: boolean) => void;
+  className?: string;
 }
 
-const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: Props) => {
+const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText, onRecordingStateChange, className }: Props) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -65,6 +67,7 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
 
       mediaRecorder.start(250);
       setIsRecording(true);
+      onRecordingStateChange?.(true);
       setRecordingSeconds(0);
       timerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
@@ -92,6 +95,7 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
     }
     setIsRecording(false);
     setIsProcessing(false);
+    onRecordingStateChange?.(false);
     setRecordingSeconds(0);
   };
 
@@ -114,6 +118,7 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
       if (audioChunksRef.current.length === 0 || audioBlob.size === 0) {
         toast.error("录音内容为空，请重新录制");
         setIsProcessing(false);
+        onRecordingStateChange?.(false);
         return;
       }
 
@@ -182,6 +187,7 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
         toast.error("录音保存失败: " + (err?.message || "未知错误"));
       } finally {
         setIsProcessing(false);
+        onRecordingStateChange?.(false);
       }
     };
 
@@ -196,32 +202,47 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
 
   if (isRecording) {
     return (
-      <div className="flex items-center gap-2 sm:gap-3 px-3 py-1 rounded-full bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-800/80 shadow-xs text-red-600 dark:text-red-300 select-none animate-in fade-in duration-150">
-        <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500"></span>
-        </span>
-        <span className="font-mono text-xs sm:text-sm font-semibold tracking-wider text-red-600 dark:text-red-400">
-          {formatSeconds(recordingSeconds)}
-        </span>
-        <div className="flex items-center gap-1.5 ml-1">
+      <div
+        className={`w-full min-w-0 max-w-full flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-red-50/95 dark:bg-red-950/60 border border-red-200 dark:border-red-900/70 shadow-xs text-red-600 dark:text-red-300 select-none animate-in fade-in duration-200 ${
+          className || ""
+        }`}
+      >
+        {/* 左侧：呼吸灯与计时器与声波动态 */}
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          <span className="relative flex h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 sm:h-3 sm:w-3 bg-red-500"></span>
+          </span>
+          <span className="font-mono text-xs sm:text-sm font-semibold tracking-wider text-red-600 dark:text-red-400 shrink-0">
+            {formatSeconds(recordingSeconds)}
+          </span>
+          {/* 录音动态指示 */}
+          <div className="hidden xs:flex items-center gap-0.5 ml-1 shrink-0 opacity-85">
+            <span className="w-0.5 sm:w-1 h-2 sm:h-3 bg-red-400 rounded-full animate-pulse"></span>
+            <span className="w-0.5 sm:w-1 h-3 sm:h-4 bg-red-500 rounded-full animate-pulse [animation-delay:150ms]"></span>
+            <span className="w-0.5 sm:w-1 h-2 sm:h-2.5 bg-red-400 rounded-full animate-pulse [animation-delay:300ms]"></span>
+          </div>
+        </div>
+
+        {/* 右侧：操作按钮（绝对不会被挤压折行） */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             type="button"
             onClick={stopRecording}
-            className="flex items-center justify-center gap-1 h-7 sm:h-8 px-2.5 sm:px-3 rounded-full bg-red-500 hover:bg-red-600 active:scale-95 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+            className="flex items-center justify-center gap-1 sm:gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg bg-red-500 hover:bg-red-600 active:scale-95 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0"
             title="完成录音并转写"
           >
-            <Icon.Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
-            <span>完成</span>
+            <Icon.Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5] shrink-0" />
+            <span className="whitespace-nowrap font-medium">完成</span>
           </button>
           <button
             type="button"
             onClick={cancelRecording}
-            className="flex items-center justify-center gap-1 h-7 sm:h-8 px-2 sm:px-2.5 rounded-full bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 active:scale-95 text-zinc-600 dark:text-zinc-300 text-xs font-medium transition-all cursor-pointer"
+            className="flex items-center justify-center gap-1 h-8 px-2 sm:px-2.5 rounded-lg bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 active:scale-95 text-zinc-600 dark:text-zinc-300 text-xs font-medium transition-all cursor-pointer whitespace-nowrap shrink-0"
             title="取消录音"
           >
-            <Icon.X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">取消</span>
+            <Icon.X className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+            <span className="whitespace-nowrap">取消</span>
           </button>
         </div>
       </div>
@@ -230,15 +251,19 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
 
   if (isProcessing) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/80 text-blue-600 dark:text-blue-400 text-xs font-medium select-none shadow-xs">
-        <Icon.Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-blue-500" />
-        <span>处理中...</span>
+      <div
+        className={`w-full min-w-0 flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50/90 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900/60 text-blue-600 dark:text-blue-400 text-xs font-medium select-none shadow-xs ${
+          className || ""
+        }`}
+      >
+        <Icon.Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-blue-500 shrink-0" />
+        <span className="whitespace-nowrap">正在处理并保存录音...</span>
       </div>
     );
   }
 
   return (
-    <IconButton size="sm" onClick={startRecording} title="语音速记 (Voice Memo)">
+    <IconButton size="sm" onClick={startRecording} title="语音速记 (Voice Memo)" className={className}>
       <Icon.Mic className="w-5 h-5 mx-auto text-zinc-600 dark:text-zinc-300 hover:text-blue-600 transition-colors" />
     </IconButton>
   );

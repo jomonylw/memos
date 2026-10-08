@@ -66,6 +66,7 @@ const MemoEditor = (props: Props) => {
     isRequesting: false,
   });
   const [hasContent, setHasContent] = useState<boolean>(false);
+  const [isVoiceRecording, setIsVoiceRecording] = useState<boolean>(false);
   const editorRef = useRef<EditorRefActions>(null);
   const userSetting = userStore.userSetting as UserSetting;
   const referenceRelations = memoId
@@ -382,17 +383,23 @@ const MemoEditor = (props: Props) => {
       onFocus={handleEditorFocus}
     >
       <Editor ref={editorRef} {...editorConfig} />
-      <div className="relative w-full flex flex-row justify-between items-center pt-2" onFocus={(e) => e.stopPropagation()}>
-        <div className="flex flex-row justify-start items-center opacity-80">
-          <TagSelector editorRef={editorRef} />
-          <MarkdownMenu editorRef={editorRef} />
-          <IconButton size="sm" onClick={handleUploadFileBtnClick}>
-            <Icon.Image className="w-5 h-5 mx-auto" />
-          </IconButton>
-          <IconButton size="sm" onClick={handleAddMemoRelationBtnClick}>
-            <Icon.Link className="w-5 h-5 mx-auto" />
-          </IconButton>
+      <div className="relative w-full flex flex-row justify-between items-center pt-2 min-h-[36px]" onFocus={(e) => e.stopPropagation()}>
+        <div className={`flex flex-row items-center transition-all ${isVoiceRecording ? "w-full min-w-0" : "justify-start opacity-80"}`}>
+          {!isVoiceRecording && (
+            <>
+              <TagSelector editorRef={editorRef} />
+              <MarkdownMenu editorRef={editorRef} />
+              <IconButton size="sm" onClick={handleUploadFileBtnClick}>
+                <Icon.Image className="w-5 h-5 mx-auto" />
+              </IconButton>
+              <IconButton size="sm" onClick={handleAddMemoRelationBtnClick}>
+                <Icon.Link className="w-5 h-5 mx-auto" />
+              </IconButton>
+            </>
+          )}
           <VoiceRecorder
+            className={isVoiceRecording ? "w-full" : ""}
+            onRecordingStateChange={setIsVoiceRecording}
             onAudioRecorded={async (audioFile) => {
               const resource = await handleUploadResource(audioFile);
               if (resource) {
