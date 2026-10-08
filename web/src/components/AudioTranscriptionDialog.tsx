@@ -119,7 +119,7 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
 
   return (
     <>
-      <div className="dialog-header-container w-full max-w-[440px] flex items-center justify-between gap-3 !mb-3">
+      <div className="dialog-header-container w-full flex items-center justify-between gap-3 !mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <Icon.Sparkles className="w-5 h-5 text-blue-500 shrink-0" />
           <p className="title-text !mb-0 font-medium text-base text-gray-800 dark:text-gray-200 truncate">语音转文字</p>
@@ -132,8 +132,8 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
         </IconButton>
       </div>
 
-      <div className="dialog-content-container w-full max-w-[440px] flex flex-col gap-3 text-xs text-gray-600 dark:text-gray-300">
-        <div className="flex items-center justify-between p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 min-w-0">
+      <div className="dialog-content-container w-full flex flex-col items-stretch gap-3 text-xs text-gray-600 dark:text-gray-300">
+        <div className="w-full flex items-center justify-between p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 min-w-0">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <Icon.FileAudio className="w-4 h-4 text-blue-500 shrink-0" />
             <span className="truncate font-medium text-zinc-700 dark:text-zinc-200 text-xs sm:text-sm">{resource.filename}</span>
@@ -141,7 +141,7 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
         </div>
 
         {!initialSetting.deepgramApiKey && !transcript && (
-          <div className="flex flex-col gap-1.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
+          <div className="w-full flex flex-col gap-1.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
             <span className="font-semibold text-amber-900 dark:text-amber-200">当前设备未配置 Deepgram API Key</span>
             <p className="text-[11px] text-amber-700 dark:text-amber-300">请输入您的 Deepgram API Key，配置后将自动保存在当前浏览器：</p>
             <Input
@@ -150,18 +150,18 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
               placeholder="输入 Deepgram API Key"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              className="mt-1"
+              className="mt-1 w-full"
             />
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="w-full flex items-center gap-2">
           <span className="text-zinc-500 dark:text-zinc-400 shrink-0">识别语言：</span>
           <Select
             size="sm"
             value={language}
             onChange={(_, val) => val && setLanguage(val as STTLanguage)}
-            className="flex-1"
+            className="flex-1 w-full"
             disabled={isTranscribing}
           >
             <Option value="zh">中文 (普通话)</Option>
@@ -171,7 +171,7 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
         </div>
 
         {errorMsg && (
-          <div className="p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs flex items-start gap-1.5">
+          <div className="w-full p-2.5 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs flex items-start gap-1.5">
             <Icon.AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <div className="flex flex-col">
               <span className="font-medium">转写遇到错误：</span>
@@ -180,14 +180,22 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
           </div>
         )}
 
+        {isTranscribing && !transcript && (
+          <div className="w-full flex flex-col items-center justify-center gap-2 py-8 px-4 rounded-lg border border-dashed border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 text-blue-600 dark:text-blue-400">
+            <Icon.Loader className="w-5 h-5 animate-spin" />
+            <span className="text-xs font-medium">正在通过 Deepgram Nova-3 识别音频内容...</span>
+          </div>
+        )}
+
         {transcript && (
-          <div className="flex flex-col gap-1.5 mt-1">
-            <div className="flex justify-between items-center text-zinc-500 text-[11px]">
+          <div className="w-full flex flex-col gap-1.5 mt-1">
+            <div className="w-full flex items-center justify-between text-zinc-500 text-xs">
               <span className="font-medium text-zinc-600 dark:text-zinc-400">转写结果：</span>
               <button
                 type="button"
                 onClick={handleCopy}
-                className="hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1 transition-colors px-1 py-0.5 rounded cursor-pointer"
+                className="ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs text-zinc-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                title="复制全部转写文本"
               >
                 {hasCopied ? (
                   <>
@@ -196,23 +204,24 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
                   </>
                 ) : (
                   <>
-                    <Icon.Copy className="w-3 h-3" />
+                    <Icon.Copy className="w-3.5 h-3.5" />
                     <span>复制文本</span>
                   </>
                 )}
               </button>
             </div>
             <Textarea
-              minRows={3}
-              maxRows={8}
+              minRows={4}
+              maxRows={10}
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
-              className="font-sans text-sm leading-relaxed"
+              className="w-full font-sans text-sm leading-relaxed border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/40"
+              placeholder="转写文本将在此显示..."
             />
           </div>
         )}
 
-        <div className="mt-3 w-full flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+        <div className="mt-3 w-full flex items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
           <Button size="sm" variant="plain" color="neutral" onClick={destroy} className="shrink-0">
             关闭
           </Button>
@@ -225,19 +234,19 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
                 loading={isTranscribing}
                 onClick={handleStartTranscribe}
                 startDecorator={<Icon.Sparkles className="w-4 h-4" />}
-                className="w-full sm:w-auto whitespace-nowrap"
+                className="whitespace-nowrap"
               >
                 {isTranscribing ? "正在识别中..." : "开始转写"}
               </Button>
             ) : (
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <div className="flex items-center gap-2 justify-end">
                 {onTranscribeText && (
                   <Button
                     size="sm"
                     color="primary"
                     onClick={handleInsertToEditor}
                     startDecorator={<Icon.Check className="w-3.5 h-3.5" />}
-                    className="whitespace-nowrap flex-1 sm:flex-initial"
+                    className="whitespace-nowrap"
                   >
                     插入正文
                   </Button>
@@ -249,7 +258,7 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
                     loading={isSavingMemo}
                     onClick={handleAppendToMemo}
                     startDecorator={<Icon.Check className="w-3.5 h-3.5" />}
-                    className="whitespace-nowrap flex-1 sm:flex-initial"
+                    className="whitespace-nowrap"
                   >
                     追加到此 Memo
                   </Button>
@@ -261,7 +270,7 @@ const AudioTranscriptionDialog: React.FC<Props> = ({ destroy, resource, memoId, 
                     color="primary"
                     onClick={handleCopy}
                     startDecorator={<Icon.Copy className="w-3.5 h-3.5" />}
-                    className="whitespace-nowrap flex-1 sm:flex-initial"
+                    className="whitespace-nowrap"
                   >
                     {hasCopied ? "已复制" : "复制文本"}
                   </Button>
@@ -280,6 +289,7 @@ export const showAudioTranscriptionDialog = (props: { resource: Resource; memoId
     {
       className: "audio-transcription-dialog",
       dialogName: "audio-transcription-dialog",
+      containerClassName: "w-full sm:w-[480px] max-w-full",
     },
     AudioTranscriptionDialog,
     props
