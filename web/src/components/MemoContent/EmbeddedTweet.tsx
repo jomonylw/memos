@@ -37,9 +37,9 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
     setTweetInfo(embedInfo);
   }, [embedInfo]);
 
-  // Try fetching oembed data to enrich fallback card if text is not available
+  // Try fetching oembed data to enrich fallback card if text is not available and status is fallback
   useEffect(() => {
-    if (tweetInfo.text || !tweetInfo.url) return;
+    if (status !== "fallback" || tweetInfo.text || !tweetInfo.url) return;
 
     let isCancelled = false;
     const fetchOembed = async () => {
@@ -68,7 +68,7 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
     return () => {
       isCancelled = true;
     };
-  }, [tweetInfo.url, tweetInfo.text]);
+  }, [status, tweetInfo.url, tweetInfo.text]);
 
   // Render tweet via widgets.js or fallback
   useEffect(() => {
@@ -122,18 +122,25 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
   };
 
   return (
-    <div className={`w-full my-2.5 flex flex-col items-center select-text relative ${className || ""}`} onClick={handleCardClick}>
+    <div
+      className={`w-full max-w-full my-2.5 flex flex-col items-center select-text relative overflow-hidden ${className || ""}`}
+      onClick={handleCardClick}
+    >
       {/* Official widget render target: Keep in layout flow so widgets.js can measure it */}
       <div
         ref={containerRef}
-        className={`w-full max-w-[550px] flex justify-center [&_.twitter-tweet]:mx-auto transition-opacity duration-200 ${
-          status === "rendered" ? "opacity-100" : status === "loading" ? "opacity-0 absolute top-0 pointer-events-none -z-10" : "hidden"
+        className={`w-full max-w-[550px] mx-auto flex justify-center [&_.twitter-tweet]:mx-auto [&_iframe]:!max-w-full [&_.twitter-tweet]:!max-w-full transition-opacity duration-200 ${
+          status === "rendered"
+            ? "opacity-100"
+            : status === "loading"
+            ? "opacity-0 absolute inset-0 w-full h-full overflow-hidden pointer-events-none -z-10"
+            : "hidden"
         }`}
       />
 
       {/* Loading Skeleton */}
       {status === "loading" && (
-        <div className="w-full max-w-[550px] p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm transition-all">
+        <div className="w-full max-w-[550px] mx-auto p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm transition-all">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
@@ -158,7 +165,7 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
 
       {/* Fallback Card */}
       {status === "fallback" && (
-        <div className="w-full max-w-[550px] p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm">
+        <div className="w-full max-w-[550px] mx-auto p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm">
           {/* Header */}
           <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center space-x-2.5 min-w-0">
