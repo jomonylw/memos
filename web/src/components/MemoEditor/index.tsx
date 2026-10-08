@@ -413,7 +413,17 @@ const MemoEditor = (props: Props) => {
           />
         </div>
       </div>
-      <ResourceListView resourceList={state.resourceList} setResourceList={handleSetResourceList} />
+      <ResourceListView
+        resourceList={state.resourceList}
+        setResourceList={handleSetResourceList}
+        onTranscribeText={(text) => {
+          if (text && editorRef.current) {
+            const currentContent = editorRef.current.getContent();
+            const prefix = currentContent && !currentContent.endsWith("\n") ? "\n" : "";
+            editorRef.current.insertText(text, prefix);
+          }
+        }}
+      />
       <RelationListView relationList={referenceRelations} setRelationList={handleSetRelationList} />
       <Divider className="!mt-2" />
       <div className="w-full flex flex-row justify-between items-center py-3 dark:border-t-zinc-500">

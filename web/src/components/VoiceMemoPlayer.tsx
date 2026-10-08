@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { Resource } from "@/types/proto/api/v2/resource_service";
 import { getResourceUrl } from "@/utils/resource";
+import showAudioTranscriptionDialog from "./AudioTranscriptionDialog";
 
 interface Props {
   resource: Resource;
@@ -26,7 +27,7 @@ const generateFallbackWaveform = (seedStr: string): number[] => {
 };
 
 const formatTime = (seconds: number): string => {
-  if (isNaN(seconds) || seconds < 0) return "00:00";
+  if (!Number.isFinite(seconds) || isNaN(seconds) || seconds <= 0) return "00:00";
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
@@ -45,6 +46,25 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [waveform, setWaveform] = useState<number[]>(() => generateFallbackWaveform(resourceUrl));
 
+  const updateDurationSafely = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const d = audio.duration;
+    if (Number.isFinite(d) && d > 0) {
+      setDuration(d);
+    } else if (d === Infinity) {
+      audio.currentTime = 1e101;
+      const handleTimeUpdateForInfinity = () => {
+        audio.removeEventListener("timeupdate", handleTimeUpdateForInfinity);
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+          setDuration(audio.duration);
+        }
+        audio.currentTime = 0;
+      };
+      audio.addEventListener("timeupdate", handleTimeUpdateForInfinity);
+    }
+  };
+
   useEffect(() => {
     let isCancelled = false;
     const fetchAndExtractWaveform = async () => {
@@ -56,6 +76,11 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
         if (!AudioCtx) return;
         const audioCtx = new AudioCtx();
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+        if (!isCancelled && Number.isFinite(audioBuffer.duration) && audioBuffer.duration > 0) {
+          setDuration(audioBuffer.duration);
+        }
+
         const channelData = audioBuffer.getChannelData(0);
         const blockSize = Math.floor(channelData.length / BAR_COUNT);
         const rawBars: number[] = [];
@@ -105,7 +130,7 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!waveformRef.current || !audioRef.current || duration === 0) return;
+    if (!waveformRef.current || !audioRef.current || duration <= 0 || !Number.isFinite(duration)) return;
     const rect = waveformRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
@@ -114,11 +139,11 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
     setCurrentTime(targetTime);
   };
 
-  const progressRatio = duration > 0 ? currentTime / duration : 0;
+  const progressRatio = duration > 0 && Number.isFinite(duration) ? currentTime / duration : 0;
 
   return (
     <div
-      className={`relative w-full max-w-md my-1.5 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700/80 bg-zinc-50/70 dark:bg-zinc-800/80 shadow-xs flex flex-col gap-2 select-none ${
+      className={`relative w-full max-w-full my-1 p-2.5 sm:p-3 rounded-xl border border-zinc-200 dark:border-zinc-700/80 bg-zinc-50/70 dark:bg-zinc-800/80 shadow-xs flex flex-col gap-2 select-none overflow-hidden box-border min-w-0 ${
         className || ""
       }`}
     >
@@ -128,8 +153,17 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
         preload="metadata"
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onTimeUpdate={() => audioRef.current && setCurrentTime(audioRef.current.currentTime)}
-        onLoadedMetadata={() => audioRef.current && setDuration(audioRef.current.duration)}
+        onTimeUpdate={() => {
+          if (audioRef.current) {
+            setCurrentTime(audioRef.current.currentTime);
+            if (duration <= 0 || !Number.isFinite(duration)) {
+              updateDurationSafely();
+            }
+          }
+        }}
+        onLoadedMetadata={updateDurationSafely}
+        onDurationChange={updateDurationSafely}
+        onCanPlay={updateDurationSafely}
         onEnded={() => {
           setIsPlaying(false);
           setCurrentTime(0);
@@ -138,33 +172,48 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
       <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
         <div className="flex items-center gap-1.5 min-w-0">
           <Icon.Mic className="w-3.5 h-3.5 shrink-0 text-blue-500" />
-          <span className="truncate font-medium">{resource.filename || "Voice Memo"}</span>
+          <span className="truncate font-medium text-xs">{resource.filename || "Voice Memo"}</span>
         </div>
-        <a
-          href={resourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-blue-600 dark:hover:text-blue-400 p-0.5 rounded transition-colors"
-          title="Download audio"
-        >
-          <Icon.Download className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
-        </a>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => showAudioTranscriptionDialog({ resource, memoId: resource.memoId })}
+            className="flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100/80 px-1.5 py-0.5 rounded transition-colors"
+            title="转写为文字 (Deepgram Nova-3)"
+          >
+            <Icon.Sparkles className="w-3 h-3" />
+            <span>转写</span>
+          </button>
+          <a
+            href={resourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-blue-600 dark:hover:text-blue-400 p-0.5 rounded transition-colors"
+            title="Download audio"
+          >
+            <Icon.Download className="w-3.5 h-3.5 opacity-70 hover:opacity-100" />
+          </a>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 w-full">
         <button
           type="button"
           onClick={togglePlay}
-          className="w-9 h-9 shrink-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-transform active:scale-95"
+          className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-transform active:scale-95"
           aria-label={isPlaying ? "Pause" : "Play"}
         >
-          {isPlaying ? <Icon.Pause className="w-4 h-4 fill-white" /> : <Icon.Play className="w-4 h-4 fill-white ml-0.5" />}
+          {isPlaying ? (
+            <Icon.Pause className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" />
+          ) : (
+            <Icon.Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white ml-0.5" />
+          )}
         </button>
 
         <div
           ref={waveformRef}
           onClick={handleSeek}
-          className="flex-1 h-8 flex items-center gap-[3px] cursor-pointer group py-1"
+          className="flex-1 min-w-0 h-7 sm:h-8 flex items-center justify-between gap-[1px] sm:gap-[2px] cursor-pointer group py-1 overflow-hidden"
           role="slider"
           aria-valuenow={currentTime}
           aria-valuemax={duration}
@@ -177,7 +226,7 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
               <span
                 key={index}
                 style={{ height: `${Math.round(heightPercent * 100)}%` }}
-                className={`w-[3px] rounded-full transition-all duration-75 ${
+                className={`flex-1 min-w-[1px] max-w-[3px] sm:max-w-[4px] rounded-full transition-all duration-75 ${
                   isFilled ? "bg-blue-600 dark:bg-blue-500 group-hover:bg-blue-500" : "bg-zinc-300 dark:bg-zinc-600 group-hover:bg-zinc-400"
                 }`}
               />
@@ -188,7 +237,7 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
         <button
           type="button"
           onClick={handleCycleSpeed}
-          className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-zinc-200/80 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 transition-colors"
+          className="shrink-0 px-1.5 sm:px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-semibold bg-zinc-200/80 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 transition-colors"
           title="Change playback speed"
         >
           {playbackRate}x
@@ -197,7 +246,7 @@ const VoiceMemoPlayer: React.FC<Props> = ({ resource, className }: Props) => {
 
       <div className="flex justify-between items-center text-[11px] text-zinc-400 dark:text-zinc-500 font-mono px-0.5">
         <span>{formatTime(currentTime)}</span>
-        <span>{formatTime(duration)}</span>
+        <span>{duration > 0 && Number.isFinite(duration) ? formatTime(duration) : "--:--"}</span>
       </div>
     </div>
   );

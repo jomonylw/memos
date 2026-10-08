@@ -35,7 +35,7 @@ const VoiceSettingSection = () => {
     }
     setIsVerifying(true);
     try {
-      const result = await verifyDeepgramApiKey(apiKey.trim());
+      const result = await verifyDeepgramApiKey(apiKey.trim(), setting.sttModel || "nova-3");
       if (result.success) {
         toast.success(result.message);
         const updated = setVoiceMemoSetting({ deepgramApiKey: apiKey.trim() });

@@ -88,9 +88,9 @@ const MemoResourceListView = ({ resourceList = [] }: { resourceList: Resource[] 
     if (resources.length === 0) return <></>;
 
     return (
-      <div className="w-full flex flex-row justify-start flex-wrap mt-2">
+      <div className="w-full flex flex-col sm:flex-row justify-start flex-wrap mt-2 gap-y-1">
         {otherResources.map((resource) => (
-          <MemoResource key={resource.id} className="my-1 mr-2" resource={resource} />
+          <MemoResource key={resource.id} className="my-1 mr-0 sm:mr-2" resource={resource} />
         ))}
       </div>
     );
