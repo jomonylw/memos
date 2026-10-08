@@ -78,6 +78,7 @@ func (s *APIV1Service) Register(rootGroup *echo.Group) {
 	s.registerMemoRoutes(apiV1Group)
 	s.registerMemoOrganizerRoutes(apiV1Group)
 	s.registerMemoRelationRoutes(apiV1Group)
+	s.registerGetterRoutes(apiV1Group)
 
 	// Register public routes.
 	publicGroup := rootGroup.Group("/o")

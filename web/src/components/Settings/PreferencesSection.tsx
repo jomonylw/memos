@@ -12,6 +12,7 @@ import AppearanceSelect from "../AppearanceSelect";
 import Icon from "../Icon";
 import LocaleSelect from "../LocaleSelect";
 import VisibilityIcon from "../VisibilityIcon";
+import VoiceSettingSection from "./VoiceSettingSection";
 import WebhookSection from "./WebhookSection";
 
 const PreferencesSection = () => {
@@ -139,6 +140,8 @@ const PreferencesSection = () => {
       <Divider className="!my-4" />
 
       <WebhookSection />
+
+      <VoiceSettingSection />
     </div>
   );
 };

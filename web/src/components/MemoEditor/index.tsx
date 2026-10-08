@@ -24,6 +24,7 @@ import TagSelector from "./ActionButton/TagSelector";
 import Editor, { EditorRefActions } from "./Editor";
 import RelationListView from "./RelationListView";
 import ResourceListView from "./ResourceListView";
+import VoiceRecorder from "./VoiceRecorder";
 import { handleEditorKeydownWithMarkdownShortcuts, hyperlinkHighlightedText } from "./handlers";
 
 interface Props {
@@ -391,6 +392,25 @@ const MemoEditor = (props: Props) => {
           <IconButton size="sm" onClick={handleAddMemoRelationBtnClick}>
             <Icon.Link className="w-5 h-5 mx-auto" />
           </IconButton>
+          <VoiceRecorder
+            onAudioRecorded={async (audioFile) => {
+              const resource = await handleUploadResource(audioFile);
+              if (resource) {
+                setState((prevState) => ({
+                  ...prevState,
+                  resourceList: [...prevState.resourceList, resource],
+                }));
+              }
+              return resource;
+            }}
+            onTranscribeText={(text) => {
+              if (text && editorRef.current) {
+                const currentContent = editorRef.current.getContent();
+                const prefix = currentContent && !currentContent.endsWith("\n") ? "\n" : "";
+                editorRef.current.insertText(text, prefix);
+              }
+            }}
+          />
         </div>
       </div>
       <ResourceListView resourceList={state.resourceList} setResourceList={handleSetResourceList} />

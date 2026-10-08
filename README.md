@@ -219,12 +219,12 @@ services:
     restart: unless-stopped
 ```
 
-每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.10`（与 git tag 一致）以及 `:0.18.2-patch.10`（semver 形式）。
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.11`（与 git tag 一致）以及 `:0.18.2-patch.11`（semver 形式）。
 
 镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
 
 ```bash
-git tag v0.18.2-patch.10 && git push origin v0.18.2-patch.10
+git tag v0.18.2-patch.11 && git push origin v0.18.2-patch.11
 ```
 
 ### 版本说明
@@ -241,6 +241,7 @@ git tag v0.18.2-patch.10 && git push origin v0.18.2-patch.10
 | `v0.18.2-patch.8` | **Twitter / X 贴文嵌入完整支持**：扩展 Gomark 解析器以完整保留官方 `<blockquote class="twitter-tweet">` 及其脚本；前端支持单行推文链接与官方嵌入代码自动渲染为交互式 Twitter Widget；自动跟随深浅主题无缝切换；内置加载骨架屏；在加载超时、被广告拦截器或网络阻断时自动降级为原生精美卡片（支持作者、正文、发布时间与跳转链接）；普通混排链接增加 Twitter 图标标识 |
 | `v0.18.2-patch.9` | **Twitter / X 渲染超时与布局保护**：增加渲染超时判定兜底逻辑，并优化挂载容器的可见度管理 |
 | `v0.18.2-patch.10` | **修复移动端 Twitter 嵌入视口跳跃与横向抖动**：严格限制加载期挂载容器尺寸防视口溢出、样式限制 iframe 最大宽度 100%、避免 oEmbed 无谓二阶段重排 |
+| `v0.18.2-patch.11` | **万能 OpenGraph 链接卡片与语音速记**：后端支持 HTML 元数据解析与 24h 缓存，严格防御私网与 CGNAT SSRF 探测；前端单行链接优雅解析为 OpenGraph 视口懒加载卡片与 GitHub 专用仓库卡片，与推文/iframe/视频无缝 short-circuit 互斥；编辑器集成语音速记工具栏，支持麦克风录音、实时计时与 Deepgram Nova-2 毫秒级转写（STT）；重构原生音频控件为交互式动态声波播放器（40柱采样、Seek 与倍速播放）；设置中心集成语音密钥与转写配置 |
 
 > ⚠️ `patch.1` 的 `auto_vacuum` 实际未生效（运行时 PRAGMA 在 WAL 切换后是空操作），
 > 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.4` 或更新版本**。

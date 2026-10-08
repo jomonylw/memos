@@ -1,8 +1,10 @@
 import { Node, NodeType } from "@/types/proto/api/v2/markdown_service";
+import EmbeddedBookmark from "./EmbeddedBookmark";
 import EmbeddedIframe from "./EmbeddedIframe";
 import EmbeddedTweet from "./EmbeddedTweet";
 import Renderer from "./Renderer";
 import { BaseProps } from "./types";
+import { isBookmarkUrl } from "./utils/bookmark";
 import { extractIframeAttributes, parseVideoUrl } from "./utils/embed";
 import { extractTweetFromChildren } from "./utils/tweet";
 
@@ -31,8 +33,12 @@ const Paragraph: React.FC<Props> = ({ children }: Props) => {
 
     if (firstChild.type === NodeType.AUTO_LINK || firstChild.type === NodeType.LINK) {
       const url = firstChild.autoLinkNode?.url || firstChild.linkNode?.url || "";
+      const text = firstChild.linkNode?.text;
       if (parseVideoUrl(url)) {
         return <EmbeddedIframe url={url} />;
+      }
+      if (isBookmarkUrl(url)) {
+        return <EmbeddedBookmark url={url} text={text} />;
       }
     }
 
@@ -57,6 +63,10 @@ const Paragraph: React.FC<Props> = ({ children }: Props) => {
             />
           );
         }
+      }
+
+      if (isBookmarkUrl(content)) {
+        return <EmbeddedBookmark url={content} />;
       }
     }
   }
