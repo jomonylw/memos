@@ -81,4 +81,3 @@ func GetHTMLMeta(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=86400")
 	return c.JSON(http.StatusOK, htmlMeta)
 }
-
