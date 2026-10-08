@@ -2,7 +2,8 @@ import { IconButton } from "@mui/joy";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "react-hot-toast";
 import Icon from "@/components/Icon";
-import { getVoiceMemoSetting, transcribeAudioWithDeepgram } from "@/helpers/stt";
+import showMicrophoneGuideDialog from "@/components/MicrophoneGuideDialog";
+import { checkMicrophoneSupport, getVoiceMemoSetting, transcribeAudioWithDeepgram } from "@/helpers/stt";
 import { Resource } from "@/types/proto/api/v2/resource_service";
 
 interface Props {
@@ -30,11 +31,17 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
   }, []);
 
   const startRecording = async () => {
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        toast.error("当前浏览器环境不支持麦克风录音");
+    const supportCheck = checkMicrophoneSupport();
+    if (!supportCheck.supported) {
+      if (supportCheck.reason === "insecure-context") {
+        showMicrophoneGuideDialog({ reason: "insecure-context" });
         return;
       }
+      showMicrophoneGuideDialog({ reason: "unsupported-browser" });
+      return;
+    }
+
+    try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -63,7 +70,13 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
       }, 1000);
     } catch (err: any) {
       console.error(err);
-      toast.error("无法访问麦克风，请检查浏览器权限设置");
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        showMicrophoneGuideDialog({ reason: "permission-denied" });
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        showMicrophoneGuideDialog({ reason: "device-not-found" });
+      } else {
+        toast.error("无法访问麦克风: " + (err.message || "请检查浏览器设置"));
+      }
     }
   };
 
@@ -106,6 +119,7 @@ const VoiceRecorder: React.FC<Props> = ({ onAudioRecorded, onTranscribeText }: P
         if (setting.deepgramApiKey) {
           transcribePromise = transcribeAudioWithDeepgram(audioBlob, {
             apiKey: setting.deepgramApiKey,
+            model: setting.sttModel,
             language: setting.sttLanguage,
           }).catch(() => {
             toast.error("Deepgram 语音转文字失败，请检查 API Key");
