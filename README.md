@@ -219,12 +219,12 @@ services:
     restart: unless-stopped
 ```
 
-每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.11`（与 git tag 一致）以及 `:0.18.2-patch.11`（semver 形式）。
+每次构建会同时推送三个 tag：`:latest`（跟随最新构建）、`:v0.18.2-patch.12`（与 git tag 一致）以及 `:0.18.2-patch.12`（semver 形式）。
 
-镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，或推送 `v*` 标签自动触发：
+镜像可通过 **Actions → build-and-push-patched-image** 手动触发构建，推送到 `main` 分支或推送 `v*` 标签均会自动触发：
 
 ```bash
-git tag v0.18.2-patch.11 && git push origin v0.18.2-patch.11
+git tag v0.18.2-patch.12 && git push origin v0.18.2-patch.12
 ```
 
 ### 版本说明
@@ -242,6 +242,8 @@ git tag v0.18.2-patch.11 && git push origin v0.18.2-patch.11
 | `v0.18.2-patch.9` | **Twitter / X 渲染超时与布局保护**：增加渲染超时判定兜底逻辑，并优化挂载容器的可见度管理 |
 | `v0.18.2-patch.10` | **修复移动端 Twitter 嵌入视口跳跃与横向抖动**：严格限制加载期挂载容器尺寸防视口溢出、样式限制 iframe 最大宽度 100%、避免 oEmbed 无谓二阶段重排 |
 | `v0.18.2-patch.11` | **万能 OpenGraph 链接卡片与语音速记**：后端支持 HTML 元数据解析与 24h 缓存，严格防御私网与 CGNAT SSRF 探测；前端单行链接优雅解析为 OpenGraph 视口懒加载卡片与 GitHub 专用仓库卡片，与推文/iframe/视频无缝 short-circuit 互斥；编辑器集成语音速记工具栏，支持麦克风录音、实时计时与 Deepgram Nova-3 / Nova-2 毫秒级转写（STT，含语言自动检测与连通性测试）；集成麦克风安全环境（HTTPS/白名单）诊断引导；重构原生音频控件为交互式动态声波播放器（40柱采样、Seek 与倍速播放）；设置中心集成语音密钥与模型切换配置 |
+| `v0.18.2-patch.12` | **语音速记体验升级与麦克风环境引导**：全面支持并默认启用 Deepgram Nova-3 旗舰模型（多语言高精度识别、语言自动探测 `detect_language`）；设置中心新增 API Key 连通性测试与模型切换（Nova-3 / Nova-2）；新增麦克风安全上下文（HTTPS / IP 局域网白名单）自动诊断与引导弹窗；GitHub Actions 镜像工作流支持 main 分支与 `v0.18.2-patch.12` 自动发布 |
+
 
 > ⚠️ `patch.1` 的 `auto_vacuum` 实际未生效（运行时 PRAGMA 在 WAL 切换后是空操作），
 > 因此**若你的数据库尚未做离线 `VACUUM`，建议直接使用 `patch.4` 或更新版本**。

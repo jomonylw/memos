@@ -4,14 +4,16 @@ name: build-and-push-patched-image
 # and pushes it to GitHub Container Registry so Unraid can pull it directly.
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to build and push (e.g. v0.18.2-patch.11)'
+        description: 'Image tag to build and push (e.g. v0.18.2-patch.12)'
         required: true
-        default: 'v0.18.2-patch.11'
+        default: 'v0.18.2-patch.12'
 
 env:
   REGISTRY: ghcr.io
