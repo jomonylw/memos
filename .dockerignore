@@ -1,5 +1,11 @@
+.git
+**/.git
+
 web/node_modules
+web/dist
 
 # macOS: exFAT metadata files pollute the build context
 .DS_Store
+**/.DS_Store
 ._*
+**/._*

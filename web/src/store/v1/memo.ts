@@ -17,7 +17,7 @@ export const useMemoStore = create(
     getState: () => get(),
     fetchMemos: async (request: Partial<ListMemosRequest>) => {
       const { memos } = await memoServiceClient.listMemos(request);
-      const memoMap = get().memoMapById;
+      const memoMap = { ...get().memoMapById };
       for (const memo of memos) {
         memoMap[memo.id] = memo;
       }
@@ -39,8 +39,7 @@ export const useMemoStore = create(
       }
 
       if (!options?.skipStore) {
-        memoMap[id] = res.memo;
-        set({ memoMapById: memoMap });
+        set({ memoMapById: { ...get().memoMapById, [id]: res.memo } });
       }
       return res.memo;
     },
@@ -53,9 +52,7 @@ export const useMemoStore = create(
         throw new Error("Memo not found");
       }
 
-      const memoMap = get().memoMapById;
-      memoMap[memo.id] = memo;
-      set({ memoMapById: memoMap });
+      set({ memoMapById: { ...get().memoMapById, [memo.id]: memo } });
       return memo;
     },
     updateMemo: async (update: Partial<Memo>, updateMask: string[]) => {
@@ -68,9 +65,7 @@ export const useMemoStore = create(
         throw new Error("Memo not found");
       }
 
-      const memoMap = get().memoMapById;
-      memoMap[memo.id] = memo;
-      set({ memoMapById: memoMap });
+      set({ memoMapById: { ...get().memoMapById, [memo.id]: memo } });
       return memo;
     },
     deleteMemo: async (id: number) => {
@@ -78,7 +73,7 @@ export const useMemoStore = create(
         id: id,
       });
 
-      const memoMap = get().memoMapById;
+      const memoMap = { ...get().memoMapById };
       delete memoMap[id];
       set({ memoMapById: memoMap });
     },

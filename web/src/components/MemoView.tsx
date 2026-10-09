@@ -19,6 +19,7 @@ import showChangeMemoCreatedTsDialog from "./ChangeMemoCreatedTsDialog";
 import { showCommonDialog } from "./Dialog/CommonDialog";
 import Icon from "./Icon";
 import MemoContent from "./MemoContent";
+import { dispatchApplyTemplate, formatTemplateString, parseTemplateFromMemo } from "./MemoEditor/ActionButton/templateUtils";
 import showMemoEditorDialog from "./MemoEditor/MemoEditorDialog";
 import MemoRelationListView from "./MemoRelationListView";
 import MemoResourceListView from "./MemoResourceListView";
@@ -33,6 +34,7 @@ interface Props {
   showCreator?: boolean;
   showVisibility?: boolean;
   showPinned?: boolean;
+  showApplyTemplate?: boolean;
   className?: string;
 }
 
@@ -49,6 +51,7 @@ const MemoView: React.FC<Props> = (props: Props) => {
   const memoContainerRef = useRef<HTMLDivElement>(null);
   const referenceRelations = memo.relations.filter((relation) => relation.type === MemoRelation_Type.REFERENCE);
   const readonly = memo.creator !== user?.name;
+  const parsedTemplate = parseTemplateFromMemo(memo);
 
   useEffect(() => {
     (async () => {
@@ -121,6 +124,22 @@ const MemoView: React.FC<Props> = (props: Props) => {
     });
   };
 
+  const handleApplyTemplateClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!parsedTemplate) return;
+
+    if (props.showApplyTemplate) {
+      dispatchApplyTemplate(parsedTemplate);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      const formattedContent = formatTemplateString(parsedTemplate.body, i18n.language);
+      showMemoEditorDialog({
+        initialContent: formattedContent,
+      });
+      toast.success(`已套用模板: ${parsedTemplate.title}`, { id: "apply-template" });
+    }
+  };
+
   const handleArchiveMemoClick = async () => {
     try {
       await memoStore.updateMemo(
@@ -166,11 +185,23 @@ const MemoView: React.FC<Props> = (props: Props) => {
 
   return (
     <div
-      className={classNames("group memo-wrapper", "memos-" + memo.id, memo.pinned && props.showPinned ? "pinned" : "", className)}
+      className={classNames(
+        "group memo-wrapper",
+        "memos-" + memo.id,
+        memo.pinned && props.showPinned ? "pinned" : "",
+        parsedTemplate ? "!border-indigo-300 dark:!border-indigo-600/70 bg-indigo-50/20 dark:bg-indigo-950/15" : "",
+        className
+      )}
       ref={memoContainerRef}
     >
       <div className="memo-top-wrapper mb-1">
-        <div className="w-full max-w-[calc(100%-20px)] flex flex-row justify-start items-center mr-1">
+        <div className="w-full max-w-[calc(100%-20px)] flex flex-row justify-start items-center mr-1 gap-1">
+          {parsedTemplate && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/60 shrink-0">
+              <Icon.LayoutTemplate className="w-3 h-3" />
+              <span>模板母版</span>
+            </span>
+          )}
           {props.showCreator && creator && (
             <>
               <Link to={`/u/${encodeURIComponent(extractUsernameFromName(memo.creator))}`} unstable_viewTransition>
@@ -221,6 +252,12 @@ const MemoView: React.FC<Props> = (props: Props) => {
                     <span className="btn" onClick={handleTogglePinMemoBtnClick}>
                       {memo.pinned ? <Icon.BookmarkMinus className="w-4 h-auto mr-2" /> : <Icon.BookmarkPlus className="w-4 h-auto mr-2" />}
                       {memo.pinned ? t("common.unpin") : t("common.pin")}
+                    </span>
+                  )}
+                  {parsedTemplate && (
+                    <span className="btn text-indigo-600 dark:text-indigo-400" onClick={handleApplyTemplateClick}>
+                      <Icon.Sparkles className="w-4 h-auto mr-2" />
+                      {t("common.apply-template")}
                     </span>
                   )}
                   <span className="btn" onClick={handleEditMemoClick}>

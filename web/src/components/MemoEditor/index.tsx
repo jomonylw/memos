@@ -21,7 +21,9 @@ import Icon from "../Icon";
 import VisibilityIcon from "../VisibilityIcon";
 import MarkdownMenu from "./ActionButton/MarkdownMenu";
 import TagSelector from "./ActionButton/TagSelector";
+import TemplateSelector from "./ActionButton/TemplateSelector";
 import Editor, { EditorRefActions } from "./Editor";
+import NestedTemplateEditor from "./NestedTemplateEditor";
 import RelationListView from "./RelationListView";
 import ResourceListView from "./ResourceListView";
 import VoiceRecorder from "./VoiceRecorder";
@@ -36,6 +38,7 @@ interface Props {
   relationList?: MemoRelation[];
   autoFocus?: boolean;
   onConfirm?: (memoId: number) => void;
+  initialContent?: string;
 }
 
 interface State {
@@ -47,7 +50,7 @@ interface State {
 }
 
 const MemoEditor = (props: Props) => {
-  const { className, editorClassName, cacheKey, memoId, parentMemoId, autoFocus, onConfirm } = props;
+  const { className, editorClassName, cacheKey, memoId, parentMemoId, autoFocus, onConfirm, initialContent } = props;
   const { i18n } = useTranslation();
   const t = useTranslate();
   const contentCacheKey = `memo-editor-${cacheKey}`;
@@ -67,6 +70,7 @@ const MemoEditor = (props: Props) => {
   });
   const [hasContent, setHasContent] = useState<boolean>(false);
   const [isVoiceRecording, setIsVoiceRecording] = useState<boolean>(false);
+  const [isNestedTemplateEditorOpen, setIsNestedTemplateEditorOpen] = useState<boolean>(false);
   const editorRef = useRef<EditorRefActions>(null);
   const userSetting = userStore.userSetting as UserSetting;
   const referenceRelations = memoId
@@ -76,7 +80,11 @@ const MemoEditor = (props: Props) => {
     : state.relationList.filter((relation) => relation.type === MemoRelation_Type.REFERENCE);
 
   useEffect(() => {
-    editorRef.current?.setContent(contentCache || "");
+    if (initialContent) {
+      editorRef.current?.setContent(initialContent);
+    } else {
+      editorRef.current?.setContent(contentCache || "");
+    }
   }, []);
 
   useEffect(() => {
@@ -355,7 +363,10 @@ const MemoEditor = (props: Props) => {
     });
   };
 
-  const handleEditorFocus = () => {
+  const handleEditorFocus = (event?: React.FocusEvent) => {
+    if (event && event.target !== event.currentTarget) {
+      return;
+    }
     editorRef.current?.focus();
   };
 
@@ -383,11 +394,29 @@ const MemoEditor = (props: Props) => {
       onFocus={handleEditorFocus}
     >
       <Editor ref={editorRef} {...editorConfig} />
+      {isNestedTemplateEditorOpen && (
+        <div
+          className="w-full"
+          onFocus={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <NestedTemplateEditor
+            initialContent={editorRef.current?.getContent() || ""}
+            onClose={() => setIsNestedTemplateEditorOpen(false)}
+          />
+        </div>
+      )}
       <div className="relative w-full flex flex-row justify-between items-center pt-2 min-h-[36px]" onFocus={(e) => e.stopPropagation()}>
         <div className={`flex flex-row items-center transition-all ${isVoiceRecording ? "w-full min-w-0" : "justify-start opacity-80"}`}>
           {!isVoiceRecording && (
             <>
               <TagSelector editorRef={editorRef} />
+              <TemplateSelector
+                editorRef={editorRef}
+                onOpenNestedEditor={() => setIsNestedTemplateEditorOpen(true)}
+              />
               <MarkdownMenu editorRef={editorRef} />
               <IconButton size="sm" onClick={handleUploadFileBtnClick}>
                 <Icon.Image className="w-5 h-5 mx-auto" />

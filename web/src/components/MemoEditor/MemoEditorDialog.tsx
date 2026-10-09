@@ -9,9 +9,10 @@ import Icon from "../Icon";
 interface Props extends DialogProps {
   memoId?: number;
   relationList?: MemoRelation[];
+  initialContent?: string;
 }
 
-const MemoEditorDialog: React.FC<Props> = ({ memoId, relationList, destroy }: Props) => {
+const MemoEditorDialog: React.FC<Props> = ({ memoId, relationList, initialContent, destroy }: Props) => {
   const globalStore = useGlobalStore();
   const tagStore = useTagStore();
   const { systemStatus } = globalStore.state;
@@ -41,6 +42,7 @@ const MemoEditorDialog: React.FC<Props> = ({ memoId, relationList, destroy }: Pr
           cacheKey={`memo-editor-${memoId}`}
           memoId={memoId}
           relationList={relationList}
+          initialContent={initialContent}
           onConfirm={handleCloseBtnClick}
           autoFocus
         />
@@ -49,7 +51,7 @@ const MemoEditorDialog: React.FC<Props> = ({ memoId, relationList, destroy }: Pr
   );
 };
 
-export default function showMemoEditorDialog(props: Pick<Props, "memoId" | "relationList"> = {}): void {
+export default function showMemoEditorDialog(props: Pick<Props, "memoId" | "relationList" | "initialContent"> = {}): void {
   generateDialog(
     {
       className: "memo-editor-dialog",
