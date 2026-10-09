@@ -36,9 +36,7 @@ export const formatTemplateString = (template: string, locale: string = "zh"): s
   const weekdaysLong = isZh
     ? ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"]
     : ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-  const weekdaysShort = isZh
-    ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-    : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const weekdaysShort = isZh ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   const weekdayLong = weekdaysLong[now.getDay()];
   const weekdayShort = weekdaysShort[now.getDay()];
@@ -210,5 +208,3 @@ export const subscribeApplyTemplate = (callback: (template: ParsedTemplate) => v
     window.removeEventListener(APPLY_TEMPLATE_EVENT, handler);
   };
 };
-
-

@@ -8,12 +8,7 @@ import { useTagStore } from "@/store/module";
 import { useMemoStore } from "@/store/v1";
 import { Visibility } from "@/types/proto/api/v2/memo_service";
 import { convertVisibilityToString } from "@/utils/memo";
-import {
-  ParsedTemplate,
-  TEMPLATE_VARIABLES,
-  formatTemplateString,
-  parseTemplateFromMemo,
-} from "./ActionButton/templateUtils";
+import { ParsedTemplate, TEMPLATE_VARIABLES, formatTemplateString, parseTemplateFromMemo } from "./ActionButton/templateUtils";
 import { EditorRefActions } from "./Editor";
 import TagSuggestions from "./Editor/TagSuggestions";
 
@@ -193,9 +188,7 @@ const NestedTemplateEditor: React.FC<Props> = ({ initialContent = "", onClose, o
 
   const previewContent = formatTemplateString(content, i18n.language);
 
-  const filteredTags = tags.filter((t) =>
-    t.toLowerCase().includes(tagSearchText.trim().toLowerCase())
-  );
+  const filteredTags = tags.filter((t) => t.toLowerCase().includes(tagSearchText.trim().toLowerCase()));
 
   return (
     <div
@@ -218,9 +211,7 @@ const NestedTemplateEditor: React.FC<Props> = ({ initialContent = "", onClose, o
             <Icon.LayoutTemplate className="w-3.5 h-3.5" />
             <span>模板工坊</span>
           </span>
-          <span className="text-xs text-indigo-900/70 dark:text-indigo-300 font-medium hidden sm:inline">
-            正在设计可复用的笔记母版
-          </span>
+          <span className="text-xs text-indigo-900/70 dark:text-indigo-300 font-medium hidden sm:inline">正在设计可复用的笔记母版</span>
         </div>
         <IconButton size="sm" variant="plain" color="neutral" onClick={onClose} className="!p-1 text-zinc-400 hover:text-zinc-600">
           <Icon.X className="w-4 h-4" />
@@ -286,9 +277,7 @@ const NestedTemplateEditor: React.FC<Props> = ({ initialContent = "", onClose, o
             <Icon.Tag className="w-3 h-3 text-indigo-500" />
             <span>选择输入标签 (点击插入至正文):</span>
           </span>
-          <span className="text-[11px] text-zinc-400 dark:text-zinc-500 hidden sm:inline">
-            正文中输入 # 亦可实时补全
-          </span>
+          <span className="text-[11px] text-zinc-400 dark:text-zinc-500 hidden sm:inline">正文中输入 # 亦可实时补全</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 relative">
           {tags.slice(0, 6).map((tag) => (
@@ -363,9 +352,7 @@ const NestedTemplateEditor: React.FC<Props> = ({ initialContent = "", onClose, o
                       </button>
                     ))}
                     {filteredTags.length === 0 && !tagSearchText.trim() && (
-                      <span className="text-xs text-zinc-400 py-1 px-1 italic font-sans">
-                        暂无标签，输入名称后回车即可插入
-                      </span>
+                      <span className="text-xs text-zinc-400 py-1 px-1 italic font-sans">暂无标签，输入名称后回车即可插入</span>
                     )}
                   </div>
 

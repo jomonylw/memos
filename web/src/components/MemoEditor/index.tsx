@@ -413,10 +413,7 @@ const MemoEditor = (props: Props) => {
           {!isVoiceRecording && (
             <>
               <TagSelector editorRef={editorRef} />
-              <TemplateSelector
-                editorRef={editorRef}
-                onOpenNestedEditor={() => setIsNestedTemplateEditorOpen(true)}
-              />
+              <TemplateSelector editorRef={editorRef} onOpenNestedEditor={() => setIsNestedTemplateEditorOpen(true)} />
               <MarkdownMenu editorRef={editorRef} />
               <IconButton size="sm" onClick={handleUploadFileBtnClick}>
                 <Icon.Image className="w-5 h-5 mx-auto" />

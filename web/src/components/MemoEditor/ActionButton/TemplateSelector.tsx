@@ -198,7 +198,10 @@ const TemplateSelector: React.FC<Props> = ({ editorRef, onOpenNestedEditor }: Pr
         </MenuButton>
       </Tooltip>
 
-      <Menu className="w-72 max-w-[90vw] text-sm !p-1.5 shadow-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg z-50" placement="bottom-start">
+      <Menu
+        className="w-72 max-w-[90vw] text-sm !p-1.5 shadow-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 rounded-lg z-50"
+        placement="bottom-start"
+      >
         <ClickAwayListener onClickAway={() => setOpen(false)}>
           <div className="flex flex-col gap-1 w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-2 py-1 text-xs text-zinc-400 dark:text-zinc-500 font-medium border-b border-zinc-100 dark:border-zinc-800/80">
@@ -329,4 +332,3 @@ const TemplateSelector: React.FC<Props> = ({ editorRef, onOpenNestedEditor }: Pr
 };
 
 export default TemplateSelector;
-
