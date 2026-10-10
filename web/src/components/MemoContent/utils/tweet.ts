@@ -201,6 +201,7 @@ const getNodeContent = (node: Node): string => {
       node.paragraphNode?.children
         ?.map((child) => {
           if (child.type === NodeType.TEXT) return child.textNode?.content || "";
+          if (child.type === NodeType.CODE) return child.codeNode?.content || "";
           if (child.type === NodeType.LINK) return child.linkNode?.url || "";
           if (child.type === NodeType.AUTO_LINK) return child.autoLinkNode?.url || "";
           if (child.type === NodeType.LINE_BREAK) return "\n";
@@ -211,6 +212,9 @@ const getNodeContent = (node: Node): string => {
   }
   if (node.type === NodeType.TEXT) {
     return node.textNode?.content || "";
+  }
+  if (node.type === NodeType.CODE) {
+    return node.codeNode?.content || "";
   }
   if (node.type === NodeType.LINE_BREAK) {
     return "\n";
