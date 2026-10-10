@@ -1,7 +1,5 @@
-import { Button } from "@mui/joy";
 import { useEffect, useState } from "react";
-import Empty from "@/components/Empty";
-import Icon from "@/components/Icon";
+import InfiniteScrollTrigger from "@/components/InfiniteScrollTrigger";
 import MemoFilter from "@/components/MemoFilter";
 import MemoView from "@/components/MemoView";
 import MobileHeader from "@/components/MobileHeader";
@@ -10,10 +8,8 @@ import { getTimeStampByDate } from "@/helpers/datetime";
 import useCurrentUser from "@/hooks/useCurrentUser";
 import { useFilterStore } from "@/store/module";
 import { useMemoList, useMemoStore } from "@/store/v1";
-import { useTranslate } from "@/utils/i18n";
 
 const Explore = () => {
-  const t = useTranslate();
   const user = useCurrentUser();
   const filterStore = useFilterStore();
   const memoStore = useMemoStore();
@@ -41,13 +37,16 @@ const Explore = () => {
       filters.push(`content_search == [${contentSearch.join(", ")}]`);
     }
     setIsRequesting(true);
-    const data = await memoStore.fetchMemos({
-      filter: filters.join(" && "),
-      limit: DEFAULT_MEMO_LIMIT,
-      offset: memoList.size(),
-    });
-    setIsRequesting(false);
-    setIsComplete(data.length < DEFAULT_MEMO_LIMIT);
+    try {
+      const data = await memoStore.fetchMemos({
+        filter: filters.join(" && "),
+        limit: DEFAULT_MEMO_LIMIT,
+        offset: memoList.size(),
+      });
+      setIsComplete(data.length < DEFAULT_MEMO_LIMIT);
+    } finally {
+      setIsRequesting(false);
+    }
   };
 
   return (
@@ -58,24 +57,12 @@ const Explore = () => {
         {sortedMemos.map((memo) => (
           <MemoView key={memo.id} memo={memo} showCreator />
         ))}
-        {isRequesting ? (
-          <div className="flex flex-col justify-start items-center w-full my-4">
-            <p className="text-sm text-gray-400 italic">{t("memo.fetching-data")}</p>
-          </div>
-        ) : isComplete ? (
-          sortedMemos.length === 0 && (
-            <div className="w-full mt-12 mb-8 flex flex-col justify-center items-center italic">
-              <Empty />
-              <p className="mt-2 text-gray-600 dark:text-gray-400">{t("message.no-data")}</p>
-            </div>
-          )
-        ) : (
-          <div className="w-full flex flex-row justify-center items-center my-4">
-            <Button variant="plain" endDecorator={<Icon.ArrowDown className="w-5 h-auto" />} onClick={fetchMemos}>
-              {t("memo.fetch-more")}
-            </Button>
-          </div>
-        )}
+        <InfiniteScrollTrigger
+          isRequesting={isRequesting}
+          isComplete={isComplete}
+          onLoadMore={fetchMemos}
+          isEmpty={sortedMemos.length === 0}
+        />
       </div>
     </section>
   );
