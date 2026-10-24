@@ -304,15 +304,23 @@ export const normalizeMemoNodes = (nodes: Node[]): Node[] => {
   return result;
 };
 
+const WIDGETS_SCRIPT_SRC = "https://platform.twitter.com/widgets.js";
+const WIDGETS_SCRIPT_SELECTOR = 'script[src*="platform.twitter.com/widgets.js"], script[src*="platform.x.com/widgets.js"]';
+const WIDGETS_DEFAULT_LOAD_TIMEOUT_MS = 8000;
+/** A failed load only blocks new attempts for a short while so a blocked script can recover later. */
+const WIDGETS_FAILURE_COOLDOWN_MS = 30000;
+const WIDGETS_RENDER_HARD_TIMEOUT_MS = 20000;
+const WIDGETS_MAX_CONCURRENT_RENDERS = 2;
+
 let widgetsLoadPromise: Promise<TwitterWidgetsApi> | null = null;
-let widgetsLoadFailed = false;
+let widgetsRetryAfter = 0;
 
 export const resetTwitterWidgetsLoadState = () => {
   widgetsLoadPromise = null;
-  widgetsLoadFailed = false;
+  widgetsRetryAfter = 0;
 };
 
-export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi> => {
+export const loadTwitterWidgets = (timeoutMs = WIDGETS_DEFAULT_LOAD_TIMEOUT_MS): Promise<TwitterWidgetsApi> => {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("window is undefined"));
   }
@@ -321,8 +329,10 @@ export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi>
     return Promise.resolve(window.twttr.widgets);
   }
 
-  if (widgetsLoadFailed) {
-    return Promise.reject(new Error("Twitter widgets previously failed to load"));
+  // A previous attempt failed. Stay failed for a short cooldown only, so a transient
+  // network error cannot permanently downgrade every tweet in this session.
+  if (widgetsRetryAfter > Date.now()) {
+    return Promise.reject(new Error("Twitter widgets failed to load recently"));
   }
 
   if (widgetsLoadPromise) {
@@ -330,6 +340,7 @@ export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi>
   }
 
   widgetsLoadPromise = new Promise<TwitterWidgetsApi>((resolve, reject) => {
+    let settled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -338,22 +349,34 @@ export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi>
       if (pollInterval) clearInterval(pollInterval);
     };
 
-    const handleFail = (reason: string) => {
+    const handleReady = (widgets: TwitterWidgetsApi) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      widgetsRetryAfter = 0;
+      resolve(widgets);
+    };
+
+    // `sticky` marks a definitive failure (the script itself errored) which blocks
+    // retries for the cooldown window. A timeout is retryable immediately.
+    const handleFail = (reason: string, sticky: boolean) => {
+      if (settled) return;
+      settled = true;
       cleanup();
       widgetsLoadPromise = null;
-      widgetsLoadFailed = true;
+      if (sticky) {
+        widgetsRetryAfter = Date.now() + WIDGETS_FAILURE_COOLDOWN_MS;
+      }
       reject(new Error(reason));
     };
 
     timer = setTimeout(() => {
-      handleFail("Twitter widgets load timeout");
+      handleFail("Twitter widgets load timeout", false);
     }, timeoutMs);
 
     const checkReady = (): boolean => {
       if (window.twttr?.widgets) {
-        cleanup();
-        widgetsLoadFailed = false;
-        resolve(window.twttr.widgets);
+        handleReady(window.twttr.widgets);
         return true;
       }
       return false;
@@ -361,31 +384,32 @@ export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi>
 
     if (checkReady()) return;
 
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[src*="platform.twitter.com/widgets.js"], script[src*="platform.x.com/widgets.js"]'
-    );
-    if (!existingScript) {
+    const waitForTwttrReady = () => {
+      if (checkReady() || !window.twttr?.ready) return;
+      window.twttr.ready((twttr: any) => {
+        if (twttr?.widgets) {
+          handleReady(twttr.widgets);
+        }
+      });
+    };
+
+    const bindScript = (script: HTMLScriptElement) => {
+      script.addEventListener("error", () => handleFail("Failed to load Twitter widgets script", true));
+      script.addEventListener("load", waitForTwttrReady);
+      // The script may have already loaded or failed before we attached listeners.
+      waitForTwttrReady();
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>(WIDGETS_SCRIPT_SELECTOR);
+    if (existingScript) {
+      bindScript(existingScript);
+    } else {
       const script = document.createElement("script");
-      script.src = "https://platform.twitter.com/widgets.js";
+      script.src = WIDGETS_SCRIPT_SRC;
       script.async = true;
       script.charset = "utf-8";
-      script.onload = () => {
-        if (!checkReady() && window.twttr?.ready) {
-          window.twttr.ready((twttr: any) => {
-            cleanup();
-            widgetsLoadFailed = false;
-            resolve(twttr.widgets);
-          });
-        }
-      };
-      script.onerror = () => {
-        handleFail("Failed to load Twitter widgets script");
-      };
+      bindScript(script);
       document.head.appendChild(script);
-    } else {
-      existingScript.addEventListener("error", () => {
-        handleFail("Failed to load Twitter widgets script");
-      });
     }
 
     pollInterval = setInterval(() => {
@@ -394,4 +418,116 @@ export const loadTwitterWidgets = (timeoutMs = 4000): Promise<TwitterWidgetsApi>
   });
 
   return widgetsLoadPromise;
+};
+
+export interface TweetWidgetOptions {
+  theme?: "light" | "dark";
+  align?: "left" | "right" | "center";
+  conversation?: "none" | "all";
+  cards?: "visible" | "hidden";
+}
+
+export interface TweetRenderHandle {
+  /**
+   * Resolves with the rendered widget element, or `null` when X could not render
+   * the tweet (deleted, private, rate limited, ...). It never rejects.
+   */
+  result: Promise<HTMLElement | null>;
+  /** Abandon this render slot. Any widget that lands afterwards must be discarded by the caller. */
+  release: () => void;
+}
+
+let activeTweetRenders = 0;
+const pendingTweetRenders: Array<() => void> = [];
+
+const acquireTweetRenderSlot = (): Promise<void> => {
+  if (activeTweetRenders < WIDGETS_MAX_CONCURRENT_RENDERS) {
+    activeTweetRenders += 1;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    pendingTweetRenders.push(() => {
+      activeTweetRenders += 1;
+      resolve();
+    });
+  });
+};
+
+const releaseTweetRenderSlot = () => {
+  activeTweetRenders = Math.max(0, activeTweetRenders - 1);
+  const next = pendingTweetRenders.shift();
+  if (next) next();
+};
+
+/**
+ * Render a tweet into `target` while bounding how many `createTweet` calls run at
+ * once. Displaying a timeline of many memos otherwise fires every request in
+ * parallel, which X throttles, producing intermittent fallback cards.
+ *
+ * The returned `result` never rejects and always settles: `null` means the widget
+ * could not be produced. A hard timeout protects the slot from a hung promise.
+ */
+export const renderTweet = (tweetId: string, target: HTMLElement, options: TweetWidgetOptions = {}): TweetRenderHandle => {
+  let released = false;
+  let slotHeld = false;
+  let hardTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Only a handle that actually holds a slot may give one back, otherwise a handle
+  // released while still queued would free another render's slot.
+  const freeSlot = () => {
+    if (!slotHeld) return;
+    slotHeld = false;
+    releaseTweetRenderSlot();
+  };
+
+  const release = () => {
+    if (released) return;
+    released = true;
+    if (hardTimer) {
+      clearTimeout(hardTimer);
+      hardTimer = null;
+    }
+    freeSlot();
+  };
+
+  const result = (async (): Promise<HTMLElement | null> => {
+    await acquireTweetRenderSlot();
+    if (released) {
+      // Released while queued: hand the slot straight to the next waiter.
+      releaseTweetRenderSlot();
+      return null;
+    }
+    slotHeld = true;
+
+    let timedOut = false;
+    const hardTimeout = new Promise<null>((resolve) => {
+      hardTimer = setTimeout(() => {
+        timedOut = true;
+        resolve(null);
+      }, WIDGETS_RENDER_HARD_TIMEOUT_MS);
+    });
+
+    const performRender = async (): Promise<HTMLElement | null> => {
+      try {
+        const widgets = await loadTwitterWidgets();
+        const el = (await widgets.createTweet(tweetId, target, { dnt: true, ...options })) || null;
+        if (timedOut) {
+          // Nobody is waiting for this widget anymore; do not leave an orphaned iframe behind.
+          el?.remove();
+          return null;
+        }
+        return el;
+      } catch {
+        return null;
+      }
+    };
+
+    try {
+      return await Promise.race([performRender(), hardTimeout]);
+    } finally {
+      freeSlot();
+    }
+  })();
+
+  return { result, release };
 };

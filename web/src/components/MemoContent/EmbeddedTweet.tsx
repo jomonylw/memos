@@ -1,27 +1,62 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
-import { TweetEmbedInfo, loadTwitterWidgets, parseTweetBlockquote } from "./utils/tweet";
+import storage from "@/helpers/storage";
+import { getSystemColorScheme } from "@/helpers/utils";
+import { TweetEmbedInfo, parseTweetBlockquote, renderTweet } from "./utils/tweet";
 
 interface Props {
   embedInfo: TweetEmbedInfo;
   className?: string;
 }
 
+/** How long to wait for the widget before showing the fallback card. The widget still renders in the background. */
+const SOFT_RENDER_TIMEOUT_MS = 6000;
+/** Coalesce rapid documentElement class flips (system theme + app hydration) into one render. */
+const THEME_DEBOUNCE_MS = 200;
+
+const readDocumentTheme = (): "light" | "dark" =>
+  typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light";
+
+const readInitialTheme = (): "light" | "dark" => {
+  if (typeof document === "undefined") return "light";
+
+  // index.html only pre-applies an explicit "dark" preference. When the user follows the
+  // system theme the class is added after hydration, so predict the resolved value here to
+  // avoid rendering the widget twice with two different themes.
+  try {
+    const { appearance } = storage.get(["appearance"]);
+    if (appearance === "dark" || appearance === "light") {
+      return appearance;
+    }
+  } catch {
+    // Ignore storage failures and fall back to the system preference.
+  }
+
+  return getSystemColorScheme();
+};
+
 const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [tweetInfo, setTweetInfo] = useState<TweetEmbedInfo>(embedInfo);
   const [status, setStatus] = useState<"loading" | "rendered" | "fallback">("loading");
-  const [theme, setTheme] = useState<"light" | "dark">(() =>
-    typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light"
-  );
+  // Tracks whether the official widget actually produced an element, independently of `status`:
+  // `status` only decides what the user sees, so a late iframe can still upgrade a fallback card.
+  const [widgetRendered, setWidgetRendered] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(readInitialTheme);
+  const [debouncedTheme, setDebouncedTheme] = useState<"light" | "dark">(theme);
+
+  // Debounce theme changes so a single visual switch does not trigger several widget renders.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedTheme(theme), THEME_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [theme]);
 
   // Sync theme with dark mode
   useEffect(() => {
     if (typeof document === "undefined") return;
 
     const observer = new MutationObserver(() => {
-      const isDark = document.documentElement.classList.contains("dark");
-      setTheme(isDark ? "dark" : "light");
+      setTheme(readDocumentTheme());
     });
 
     observer.observe(document.documentElement, {
@@ -72,69 +107,68 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
 
   // Render tweet via widgets.js or fallback
   useEffect(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
     let isCancelled = false;
+    let softTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const renderTweet = async () => {
-      if (!containerRef.current) return;
+    setStatus("loading");
+    setWidgetRendered(false);
+    container.innerHTML = "";
 
-      setStatus("loading");
-      containerRef.current.innerHTML = "";
+    const handle = renderTweet(tweetInfo.tweetId, container, { theme: debouncedTheme, align: "center" });
 
-      try {
-        const widgets = await loadTwitterWidgets(4000);
-        if (isCancelled || !containerRef.current) return;
-
-        // Use Promise.race with timeout so widgets.createTweet never hangs indefinitely
-        const renderPromise = widgets.createTweet(tweetInfo.tweetId, containerRef.current, {
-          theme,
-          dnt: true,
-          align: "center",
-        });
-
-        const timeoutPromise = new Promise<null>((_, reject) => setTimeout(() => reject(new Error("Twitter render timeout")), 4500));
-
-        const el = await Promise.race([renderPromise, timeoutPromise]);
-
-        if (isCancelled) return;
-
-        if (el) {
-          setStatus("rendered");
-        } else {
-          // Tweet not found or deleted
-          setStatus("fallback");
-        }
-      } catch {
-        if (!isCancelled) {
-          setStatus("fallback");
-        }
+    // Show the fallback card when the widget is slow, but keep waiting: `renderTweet` is not
+    // cancelled, so a late iframe still promotes the card to the official embed.
+    softTimeoutTimer = setTimeout(() => {
+      if (!isCancelled) {
+        setStatus((current) => (current === "loading" ? "fallback" : current));
       }
-    };
+    }, SOFT_RENDER_TIMEOUT_MS);
 
-    renderTweet();
+    handle.result.then((el) => {
+      if (isCancelled) {
+        // The widget landed after this render was abandoned (unmount or theme change).
+        // widgets.js already inserted it, so drop it to avoid a duplicate embed.
+        el?.remove();
+        return;
+      }
+
+      if (el) {
+        setWidgetRendered(true);
+        setStatus("rendered");
+      } else {
+        setStatus("fallback");
+      }
+    });
 
     return () => {
       isCancelled = true;
+      if (softTimeoutTimer) clearTimeout(softTimeoutTimer);
+      handle.release();
+      container.innerHTML = "";
     };
-  }, [tweetInfo.tweetId, theme]);
+  }, [tweetInfo.tweetId, debouncedTheme]);
 
   const handleCardClick = (e: React.MouseEvent) => {
     e.stopPropagation();
   };
+
+  // Only ever reveal the container once widgets.js actually produced an element.
+  const isWidgetVisible = widgetRendered;
 
   return (
     <div
       className={`w-full max-w-full my-2.5 flex flex-col items-center select-text relative overflow-hidden ${className || ""}`}
       onClick={handleCardClick}
     >
-      {/* Official widget render target: Keep in layout flow so widgets.js can measure it */}
+      {/* Official widget render target. It must stay mounted and measurable at all times,
+          otherwise a widget that arrives after the fallback card appeared can never be shown. */}
       <div
         ref={containerRef}
         className={`w-full max-w-[550px] mx-auto flex justify-center [&_.twitter-tweet]:mx-auto [&_iframe]:!max-w-full [&_.twitter-tweet]:!max-w-full transition-opacity duration-200 ${
-          status === "rendered"
-            ? "opacity-100"
-            : status === "loading"
-            ? "opacity-0 absolute inset-0 w-full h-full overflow-hidden pointer-events-none -z-10"
-            : "hidden"
+          isWidgetVisible ? "relative opacity-100" : "absolute inset-0 h-full opacity-0 pointer-events-none -z-10"
         }`}
       />
 
@@ -164,7 +198,7 @@ const EmbeddedTweet: React.FC<Props> = ({ embedInfo, className }: Props) => {
       )}
 
       {/* Fallback Card */}
-      {status === "fallback" && (
+      {status === "fallback" && !widgetRendered && (
         <div className="w-full max-w-[550px] mx-auto p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/70 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-sm">
           {/* Header */}
           <div className="flex items-center justify-between mb-2.5">
